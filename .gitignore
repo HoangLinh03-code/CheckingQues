@@ -1,0 +1,13 @@
+__pycache__/
+*.json
+*.log
+.env
+build/
+dist/
+venv/
+.vscode/
+.idea/
+.qodo/
+.cache/
+*.docx
+output_check/
