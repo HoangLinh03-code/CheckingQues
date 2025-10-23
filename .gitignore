@@ -11,3 +11,4 @@ venv/
 .cache/
 *.docx
 output_check/
+test.py

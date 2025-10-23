@@ -3,14 +3,44 @@ from vertexai.generative_models import GenerativeModel, Part, GenerationConfig
 from dotenv import load_dotenv
 from google.oauth2 import service_account
 import sys
+sys.path.append(os.path.dirname(__file__))
+
 load_dotenv()
-if getattr(sys, 'frozen', False):
-    base_path = sys._MEIPASS
-else:
-    base_path = os.path.dirname(__file__)
- 
-dotenv_path = os.path.join(base_path, '.env')
-load_dotenv(dotenv_path)
+def get_credentials():
+    """Load Google Cloud credentials"""
+    try:
+        if getattr(sys, 'frozen', False):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.dirname(__file__)
+        
+        dotenv_path = os.path.join(base_path, '.env')
+        load_dotenv(dotenv_path)
+        
+        service_account_data = {
+            "type": os.getenv("TYPE"),
+            "project_id": os.getenv("PROJECT_ID"),
+            "private_key_id": os.getenv("PRIVATE_KEY_ID"),
+            "private_key": os.getenv("PRIVATE_KEY").replace('\\n', '\n'),
+            "client_email": os.getenv("CLIENT_EMAIL"),
+            "client_id": os.getenv("CLIENT_ID", ""),
+            "auth_uri": os.getenv("AUTH_URI"),
+            "token_uri": os.getenv("TOKEN_URI"),
+            "auth_provider_x509_cert_url": os.getenv("AUTH_PROVIDER_X509_CERT_URL"),
+            "client_x509_cert_url": os.getenv("CLIENT_X509_CERT_URL"),
+            "universe_domain": os.getenv("UNIVERSE_DOMAIN")
+        }
+        
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_data,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        project_id = os.getenv('PROJECT_ID')
+        
+        return credentials, project_id
+    except Exception as e:
+        raise Exception(f"Không thể load credentials: {str(e)}")
+
 class VertexClient:
     def __init__(self, project_id, creds, model, region="us-central1"):
         vertexai.init(
@@ -62,26 +92,5 @@ class VertexClient:
         )
         return response.text
 
-def get_vertex_ai_credentials():
-    try:
-        service_account_data = {
-            "type": os.getenv("TYPE"),
-            "project_id": os.getenv("PROJECT_ID"),
-            "private_key_id": os.getenv("PRIVATE_KEY_ID"),
-            "private_key": os.getenv("PRIVATE_KEY").replace('\\n', '\n'), 
-            "client_email": os.getenv("CLIENT_EMAIL"),
-            "client_id": os.getenv("CLIENT_ID", ""),
-            "auth_uri": os.getenv("AUTH_URI"),
-            "token_uri": os.getenv("TOKEN_URI"),
-            "auth_provider_x509_cert_url": os.getenv("AUTH_PROVIDER_X509_CERT_URL"),
-            "client_x509_cert_url": os.getenv("CLIENT_X509_CERT_URL"),
-            "universe_domain": os.getenv("UNIVERSE_DOMAIN")
-        }
-        credentials = service_account.Credentials.from_service_account_info(
-            service_account_data,
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-        return credentials
-    except Exception as e:
-        print(f"Lá»—i khi táº¡o credentials trÃªn service account: {e}")
-        return None
+
+
