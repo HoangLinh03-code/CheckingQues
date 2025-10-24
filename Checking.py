@@ -17,6 +17,17 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QFont
 from api.callApi import get_credentials
 from process.CheckThread import CheckThread
+import dotenv
+from dotenv import load_dotenv
+load_dotenv()
+
+if getattr(sys, 'frozen', False):
+    base_path = sys._MEIPASS
+else:
+    base_path = os.path.dirname(__file__)
+ 
+dotenv_path = os.path.join(base_path, '.env')
+load_dotenv(dotenv_path)
 # ==================== MAIN WINDOW (giữ nguyên UI cũ) ====================
 class MainWindow(QWidget):
     def __init__(self):

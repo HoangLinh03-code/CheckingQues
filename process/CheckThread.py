@@ -17,7 +17,7 @@ class CheckThread(QThread):
     error_signal = pyqtSignal(str)
     
     def __init__(self, input_paths: List[str], prompt_path: str, 
-                 project_id: str, creds):
+                project_id: str, creds):
         super().__init__()
         self.input_paths = input_paths
         self.prompt_path = prompt_path
