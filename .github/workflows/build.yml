@@ -20,7 +20,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"  # chọn phiên bản phù hợp
+          python-version: ">=3.10"  # chọn phiên bản phù hợp
 
       - name: Install dependencies
         run: |
@@ -51,7 +51,7 @@ jobs:
           python -c "import PyQt5; import PyQt5.QtWidgets; print('✅ PyQt5 OK')"
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --noconsole --collect-all PyQt5 --collect-all PyQt5.QtWidgets --collect-all PyQt5.QtGui --collect-all PyQt5.QtCore Cheking.py
+          pyinstaller --onefile --noconsole Cheking.py
         # Thay main.py bằng file chính của bạn (ví dụ: Cheking.py)
 
       - name: Upload EXE as artifact (internal use)
