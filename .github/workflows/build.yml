@@ -38,7 +38,7 @@ jobs:
     
     - name: Install PyInstaller
       run: |
-        pip install pyinstaller==6.3.0
+        pip install pyinstaller
     
     - name: Verify PyQt5 installation
       run: |
