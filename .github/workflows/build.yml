@@ -1,4 +1,4 @@
-name: Build Checking Question EXE
+name: Build Checking Question EXE (Windows)
 
 on:
   push:
@@ -12,8 +12,12 @@ jobs:
   build:
     runs-on: windows-latest
 
+    permissions:
+      contents: write
+
     env:
       PYTHONUNBUFFERED: 1
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       MATHPIX_APP_KEY: ${{ secrets.MATHPIX_APP_KEY }}
       MATHPIX_APP_ID: ${{ secrets.MATHPIX_APP_ID }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -39,44 +43,43 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Upgrade pip and install dependencies
+        shell: pwsh
         run: |
           python -m pip install --upgrade pip
           if (Test-Path "requirements.txt") {
             pip install -r requirements.txt
           }
-          # Kiểm tra PyQt5, nếu không có thì cài
-          python - <<'EOF'
-          import importlib.util, subprocess, sys
-          pkg = 'PyQt5'
-          if importlib.util.find_spec(pkg) is None:
-              print(f"{pkg} not found. Installing...")
-              subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
-          else:
-              print(f"{pkg} already installed.")
-          EOF
+
+          # Kiểm tra PyQt5, nếu chưa có thì cài
+          $pkg = "PyQt5"
+          $check = python -c "import importlib.util, sys; print(importlib.util.find_spec('$pkg') is not None)"
+          if ($check -eq "False") {
+              Write-Host "$pkg not found. Installing..."
+              pip install PyQt5
+          } else {
+              Write-Host "$pkg already installed."
+          }
+
           pip install pyinstaller
 
-      - name: Build EXE with PyInstaller
+      - name: Build single EXE
+        shell: pwsh
         run: |
           pyinstaller --onefile --noconsole Checking.py
-        shell: pwsh
+          if (!(Test-Path "dist\Checking.exe")) {
+            Write-Error "Build failed: EXE not found!"
+            exit 1
+          }
 
       - name: Move EXE to artifact folder
+        shell: pwsh
         run: |
           mkdir dist_artifact
-          move dist\Checking.exe dist_artifact\
-        shell: pwsh
+          move dist\Checking.exe dist_artifact\Checking.exe
 
-      - name: Upload EXE artifact
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: Checking-Tool
           path: dist_artifact/Checking.exe
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist_artifact/Checking.exe
-          tag_name: v${{ github.run_number }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}        
