@@ -55,7 +55,7 @@ jobs:
       env:
         # Gán secret vào một biến môi trường, GitHub Actions sẽ xử lý các ký tự đặc biệt một cách an toàn
         ENV_KEY_CONTENT: ${{ secrets.ENV_KEY }}
-      
+        
     # === ĐÃ XÓA STEP 'Create spec file for PyInstaller' ===
     
     - name: Build with PyInstaller
