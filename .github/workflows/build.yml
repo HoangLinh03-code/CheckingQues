@@ -1,9 +1,11 @@
+# @format
+
 name: Build and Release EXE
 
 on:
   push:
     branches:
-      - develop   # Chạy khi bạn push lên nhánh develop
+      - develop
   workflow_dispatch:
 
 permissions:
@@ -15,35 +17,22 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # -------------------
-      # 1. Checkout source
-      # -------------------
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # -------------------
-      # 2. Setup Python
-      # -------------------
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      # -------------------
-      # 3. Install dependencies
-      # -------------------
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # -------------------
-      # 4. Inject credentials vào code
-      # -------------------
       - name: Embed Google Credentials into callApi.py
         run: |
-          echo "🔧 Embedding credentials into api/callApi.py"
           python - <<'EOF'
           import os, json, pathlib
 
@@ -66,7 +55,6 @@ jobs:
           content = target.read_text(encoding="utf-8")
           new_header = f'EMBEDDED_CREDS = """{json_str}"""\n'
           if "EMBEDDED_CREDS" in content:
-              # Replace dòng cũ nếu đã tồn tại
               lines = content.splitlines()
               for i, line in enumerate(lines):
                   if line.strip().startswith("EMBEDDED_CREDS"):
@@ -76,7 +64,6 @@ jobs:
           else:
               content = new_header + content
           target.write_text(content, encoding="utf-8")
-          print("Credentials embedded successfully.")
           EOF
         env:
           TYPE: ${{ secrets.TYPE }}
@@ -91,41 +78,28 @@ jobs:
           CLIENT_X509_CERT_URL: ${{ secrets.CLIENT_X509_CERT_URL }}
           UNIVERSE_DOMAIN: ${{ secrets.UNIVERSE_DOMAIN }}
 
-      # -------------------
-      # 5. Verify PyQt5
-      # -------------------
       - name: Verify PyQt5 installation
         run: |
           python -m pip show PyQt5
           python -c "import PyQt5; print('PyQt5 imported successfully')"
 
-      # -------------------
-      # 6. Build EXE (single file)
-      # -------------------
       - name: Build executable with PyInstaller
         run: |
           pyinstaller --onefile --noconsole Checking.py
-        # Nếu file main khác thì sửa tên ở đây
 
-      # -------------------
-      # 7. Upload artifact nội bộ
-      # -------------------
       - name: Upload built EXE as artifact
         uses: actions/upload-artifact@v4
         with:
           name: built-exe
           path: dist/*.exe
 
-      # -------------------
-      # 8. Tạo GitHub Release tự động
-      # -------------------
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: "Build #${{ github.run_number }}"
-          body: "🚀 Build tự động từ nhánh `${{ github.ref_name }}`"
+          body: "Build tu dong tu nhanh ${GITHUB_REF_NAME}"
           draft: false
           prerelease: false
           files: dist/*.exe
