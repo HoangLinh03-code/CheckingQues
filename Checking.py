@@ -19,15 +19,20 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QFont
 from api.callApi import get_credentials
 from process.CheckThread import CheckThread
-import dotenv
 from dotenv import load_dotenv
-load_dotenv()
-if getattr(sys, 'frozen', False):
-    base_path = sys._MEIPASS
-else:
-    base_path = os.path.dirname(__file__)
-dotenv_path = os.path.join(base_path, '.env')
-load_dotenv(dotenv_path)
+from pathlib import Path
+# ==================== LOAD ENV (chỉ khi chạy local) ====================
+try:
+    # Nếu chạy local bằng Python thì mới cần load file .env
+    if not getattr(sys, 'frozen', False):
+        env_path = Path(__file__).parent / ".env"
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path)
+            print(f"✅ Loaded local .env: {env_path}")
+        else:
+            print("⚠️ Không tìm thấy file .env — có thể đang chạy bản .exe build")
+except Exception as e:
+    print(f"⚠️ Lỗi khi load .env (bỏ qua vì không ảnh hưởng build): {e}")
 # ==================== MAIN WINDOW (giữ nguyên UI cũ) ====================
 class MainWindow(QWidget):
     def __init__(self):
