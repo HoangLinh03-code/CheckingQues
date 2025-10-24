@@ -98,68 +98,68 @@ jobs:
     - name: Create spec file for PyInstaller
       run: |
         $specContent = @"
-# -*- mode: python ; coding: utf-8 -*-
-
-block_cipher = None
-
-a = Analysis(
-    ['process/Checking.py'],
-    pathex=[],
-    binaries=[],
-    datas=[
-        ('.env', '.'),
-    ],
-    hiddenimports=[
-        'PyQt5',
-        'PyQt5.QtCore',
-        'PyQt5.QtGui',
-        'PyQt5.QtWidgets',
-        'google.oauth2.service_account',
-        'google.auth.transport.requests',
-        'vertexai',
-        'vertexai.generative_models',
-        'docx',
-        'lxml',
-        'lxml.etree',
-        'PIL',
-        'dotenv',
-        'python-dotenv',
-    ],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=False,
-)
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name='CheckDe_V2',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=None,
-)
-"@
+        # -*- mode: python ; coding: utf-8 -*-
+        
+        block_cipher = None
+        
+        a = Analysis(
+            ['process/Checking.py'],
+            pathex=[],
+            binaries=[],
+            datas=[
+                ('.env', '.'),
+            ],
+            hiddenimports=[
+                'PyQt5',
+                'PyQt5.QtCore',
+                'PyQt5.QtGui',
+                'PyQt5.QtWidgets',
+                'google.oauth2.service_account',
+                'google.auth.transport.requests',
+                'vertexai',
+                'vertexai.generative_models',
+                'docx',
+                'lxml',
+                'lxml.etree',
+                'PIL',
+                'dotenv',
+                'python-dotenv',
+            ],
+            hookspath=[],
+            hooksconfig={},
+            runtime_hooks=[],
+            excludes=[],
+            win_no_prefer_redirects=False,
+            win_private_assemblies=False,
+            cipher=block_cipher,
+            noarchive=False,
+        )
+        
+        pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+        
+        exe = EXE(
+            pyz,
+            a.scripts,
+            a.binaries,
+            a.zipfiles,
+            a.datas,
+            [],
+            name='CheckDe_V2',
+            debug=False,
+            bootloader_ignore_signals=False,
+            strip=False,
+            upx=True,
+            upx_exclude=[],
+            runtime_tmpdir=None,
+            console=False,
+            disable_windowed_traceback=False,
+            argv_emulation=False,
+            target_arch=None,
+            codesign_identity=None,
+            entitlements_file=None,
+            icon=None,
+        )
+        "@
         Set-Content -Path "CheckDe.spec" -Value $specContent
         Write-Host "Spec file created"
       shell: pwsh
@@ -192,29 +192,29 @@ exe = EXE(
         
         # Tạo README cho người dùng
         $readmeContent = @"
-# CheckDe V2 - Hướng dẫn sử dụng
-
-## Cài đặt
-1. Giải nén file zip
-2. Chạy CheckDe_V2.exe
-
-## Lưu ý
-- File .exe đã được build với tất cả credentials cần thiết
-- Không cần cài đặt Python hay dependencies
-- Chỉ chạy trên Windows 10/11
-
-## Tính năng
-- Hỗ trợ hình ảnh & công thức toán
-- Check đề thi tự động với AI
-- Export kết quả ra file Word
-
-## Hỗ trợ
-Nếu gặp vấn đề, vui lòng tạo issue trên GitHub.
-"@
+        # CheckDe V2 - Hướng dẫn sử dụng
+        
+        ## Cài đặt
+        1. Giải nén file zip
+        2. Chạy CheckDe_V2.exe
+        
+        ## Lưu ý
+        - File .exe đã được build với tất cả credentials cần thiết
+        - Không cần cài đặt Python hay dependencies
+        - Chỉ chạy trên Windows 10/11
+        
+        ## Tính năng
+        - Hỗ trợ hình ảnh & công thức toán
+        - Check đề thi tự động với AI
+        - Export kết quả ra file Word
+        
+        ## Hỗ trợ
+        Nếu gặp vấn đề, vui lòng tạo issue trên GitHub.
+        "@
         Set-Content -Path "release/README.txt" -Value $readmeContent
         
         Write-Host "Release package created"
-      shell: pwsh
+        shell: pwsh
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
