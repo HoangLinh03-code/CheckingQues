@@ -9,6 +9,8 @@ CheckDe_V2.py - IMPROVED: Đọc hình ảnh, công thức toán, XML structure
 import sys
 import os
 import glob
+import PyQt5
+import PyQt5.QtCore
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFileDialog, QMessageBox, QTextEdit, QProgressBar,
