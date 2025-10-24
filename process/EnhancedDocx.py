@@ -1,8 +1,9 @@
 """
-EnhancedDocxParser V8 - FIX DIVISION BY ZERO ERROR
+EnhancedDocxParser V9 - FIXED WORKFLOW
 Cải tiến:
-- Xử lý an toàn các phép chia
-- Thêm error handling toàn diện
+- Quét chính xác ranh giới câu hỏi (bao gồm cả lời giải)
+- Xác định rõ điểm kết thúc câu (sau lời giải nếu có)
+- Xử lý an toàn các phép chia và lỗi
 - Log chi tiết để debug
 """
 
@@ -18,7 +19,7 @@ import traceback
 
 
 class EnhancedDocxParser:
-    """Parser nâng cao với xử lý lỗi an toàn"""
+    """Parser nâng cao với xử lý workflow chính xác"""
     
     # Định nghĩa các dạng câu hỏi
     QUESTION_TYPE_MULTIPLE_CHOICE = "multiple_choice"
@@ -88,7 +89,6 @@ class EnhancedDocxParser:
                     self.log("⚠️ Không tìm thấy document.xml.rels")
         except Exception as e:
             self.log(f"✗ Lỗi load relationships: {str(e)}")
-            self.log(traceback.format_exc())
     
     def _load_media(self):
         """Load tất cả media files với error handling"""
@@ -214,7 +214,7 @@ class EnhancedDocxParser:
             ole_objects = lxml_p.xpath('.//o:OLEObject', namespaces=self.namespaces)
             for ole in ole_objects:
                 try:
-                    r_id = ole.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
+                    r_id = ole.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
                     ole_type = ole.get('Type', '')
                     if r_id and r_id in self.image_map:
                         img_info = self.image_map[r_id]
@@ -310,10 +310,11 @@ class EnhancedDocxParser:
             return self.QUESTION_TYPE_UNKNOWN
     
     def _is_solution_start_marker(self, text: str) -> bool:
-        """Kiểm tra marker bắt đầu lời giải"""
+        """Kiểm tra marker bắt đầu lời giải - CẢI TIẾN"""
         try:
             text_lower = text.lower().strip()
             
+            # Các marker phổ biến
             solution_markers = [
                 'lời giải',
                 'giải:',
@@ -322,29 +323,66 @@ class EnhancedDocxParser:
                 'giải thích:',
                 'phân tích:',
                 'bài giải:',
-                'lời giải ####'
+                'lời giải ####',
+                'lời giải chi tiết',
+                'cách giải:',
+                'phương pháp:'
             ]
             
+            # Kiểm tra bắt đầu với marker
             for marker in solution_markers:
                 if text_lower.startswith(marker):
                     return True
+            
+            # Kiểm tra các pattern đặc biệt
+            # Ví dụ: "=== LỜI GIẢI ==="
+            if re.match(r'^[=\-*]{3,}.*?(lời giải|giải|đáp án).*?[=\-*]{3,}', text_lower):
+                return True
             
             return False
         except Exception as e:
             self.log(f"⚠️ Lỗi check solution marker: {str(e)}")
             return False
     
-    def _is_next_question_marker(self, text: str) -> bool:
-        """Kiểm tra marker câu hỏi tiếp theo"""
+    def _is_solution_end_marker(self, text: str) -> bool:
+        """Kiểm tra marker kết thúc lời giải - MỚI"""
         try:
+            text_lower = text.lower().strip()
+            
+            # Các marker kết thúc
+            end_markers = [
+                'hết lời giải',
+                'kết thúc lời giải',
+                '--- hết ---',
+                '=== hết ===',
+                'end solution',
+                'vậy đáp án là',  # Thường là câu cuối
+                'chọn đáp án',
+            ]
+            
+            for marker in end_markers:
+                if marker in text_lower:
+                    return True
+            
+            return False
+        except Exception as e:
+            return False
+    
+    def _is_next_question_marker(self, text: str) -> bool:
+        """Kiểm tra marker câu hỏi tiếp theo - CẢI TIẾN"""
+        try:
+            text_stripped = text.strip()
+            
+            # Pattern 1: Câu X (với nhiều biến thể)
             patterns = [
                 r'^\s*\*?\*?\s*(?:\[.*?\])?\s*Câu\s+(\d+)\s*[:\.]?\s*\*?\*?',
                 r'^\s*Question\s+(\d+)\s*[:\.]?',
-                r'^\s*(\d+)\s*[\.\)\-]\s+',
+                r'^\s*Bài\s+(\d+)\s*[:\.]?',
+                r'^\s*(\d+)\s*[\.\)\-]\s+\w',  # Số theo sau là chữ
             ]
             
             for pattern in patterns:
-                if re.match(pattern, text, re.IGNORECASE):
+                if re.match(pattern, text_stripped, re.IGNORECASE):
                     return True
             
             return False
@@ -352,63 +390,15 @@ class EnhancedDocxParser:
             self.log(f"⚠️ Lỗi check next question marker: {str(e)}")
             return False
     
-    def _check_duplicate_question(self, questions: Dict, new_question_text: str) -> Optional[int]:
-        """Kiểm tra câu hỏi lặp"""
-        try:
-            new_text_clean = re.sub(r'\s+', ' ', new_question_text.lower().strip())
-            
-            for qnum, q_data in questions.items():
-                existing_text = ' '.join(q_data.get('question_text', []))
-                existing_clean = re.sub(r'\s+', ' ', existing_text.lower().strip())
-                
-                if new_text_clean in existing_clean or existing_clean in new_text_clean:
-                    return qnum
-            
-            return None
-        except Exception as e:
-            self.log(f"⚠️ Lỗi check duplicate question: {str(e)}")
-            return None
-    
-    def _check_duplicate_answers(self, text: str) -> Dict:
-        """Kiểm tra đáp án lặp"""
-        try:
-            answer_pattern = r'\b([A-D])\.\s*([^\n]+)'
-            answers = re.findall(answer_pattern, text, re.MULTILINE)
-            
-            if not answers:
-                return {'has_duplicate': False, 'details': ''}
-            
-            # Kiểm tra trùng chỉ số
-            answer_letters = [a[0] for a in answers]
-            if len(answer_letters) != len(set(answer_letters)):
-                duplicate_letters = [l for l in set(answer_letters) if answer_letters.count(l) > 1]
-                return {
-                    'has_duplicate': True,
-                    'details': f"Đáp án lặp chỉ số: {', '.join(duplicate_letters)}"
-                }
-            
-            # Kiểm tra trùng nội dung
-            answer_contents = [re.sub(r'\s+', ' ', a[1].strip().lower()) for a in answers]
-            seen = set()
-            duplicates = []
-            for i, content in enumerate(answer_contents):
-                if content in seen and content:
-                    duplicates.append(answer_letters[i])
-                seen.add(content)
-            
-            if duplicates:
-                return {
-                    'has_duplicate': True,
-                    'details': f"Đáp án lặp nội dung: {', '.join(duplicates)}"
-                }
-            
-            return {'has_duplicate': False, 'details': ''}
-        except Exception as e:
-            self.log(f"⚠️ Lỗi check duplicate answers: {str(e)}")
-            return {'has_duplicate': False, 'details': ''}
-    
     def parse_questions_with_numbering(self) -> Dict[int, Dict]:
-        """Parse câu hỏi với phát hiện dạng và kiểm tra lặp"""
+        """
+        Parse câu hỏi với workflow chính xác:
+        1. Phát hiện câu hỏi mới (numbering hoặc pattern)
+        2. Thu thập nội dung câu hỏi
+        3. Phát hiện lời giải (nếu có)
+        4. Thu thập lời giải đến khi gặp câu mới hoặc marker kết thúc
+        5. Xác định end_paragraph = paragraph cuối của lời giải hoặc câu hỏi
+        """
         questions = {}
         current_question_num = None
         current_question_data = self._init_question_data()
@@ -420,7 +410,7 @@ class EnhancedDocxParser:
         solution_end_paragraph = None
         
         self.log("\n" + "="*70)
-        self.log("BẮT ĐẦU PARSE CÂU HỎI V8")
+        self.log("BẮT ĐẦU PARSE CÂU HỎI V9 - WORKFLOW FIX")
         self.log("="*70)
         
         try:
@@ -436,109 +426,116 @@ class EnhancedDocxParser:
                     text = para.text.strip()
                     has_numbering = self.get_paragraph_numbering(para)
                     
-                    # CASE 1: Paragraph có numbering → Câu hỏi mới
+                    # ========== PHÁT HIỆN CÂU HỎI MỚI ==========
+                    is_new_question = False
+                    
+                    # Cách 1: Có numbering
                     if has_numbering:
+                        is_new_question = True
                         list_item_counter += 1
-                        
-                        # Lưu câu cũ
+                        detected_qnum = list_item_counter
+                        self.log(f"\n🔢 Phát hiện numbering tại para {idx}: Câu {detected_qnum}")
+                    
+                    # Cách 2: Pattern câu hỏi (nếu chưa có numbering)
+                    elif not in_solution and self._is_next_question_marker(text):
+                        is_new_question = True
+                        # Trích xuất số câu từ text
+                        match = re.search(r'Câu\s+(\d+)|Question\s+(\d+)|Bài\s+(\d+)|^(\d+)[\.\)]',
+                                         text, re.IGNORECASE)
+                        if match:
+                            detected_qnum = int([g for g in match.groups() if g][0])
+                            list_item_counter = detected_qnum
+                        else:
+                            list_item_counter += 1
+                            detected_qnum = list_item_counter
+                        self.log(f"\n📝 Phát hiện pattern câu hỏi tại para {idx}: Câu {detected_qnum}")
+                    
+                    # ========== XỬ LÝ CÂU HỎI MỚI ==========
+                    if is_new_question:
+                        # Lưu câu cũ (nếu có)
                         if current_question_num is not None:
+                            # end_paragraph = paragraph cuối của lời giải (nếu có) hoặc câu hỏi
                             if solution_end_paragraph is not None:
                                 current_question_data['end_paragraph'] = solution_end_paragraph
                             else:
                                 current_question_data['end_paragraph'] = idx - 1
                             
                             questions[current_question_num] = current_question_data.copy()
-                            self.log(f"✓ Lưu Câu {current_question_num} "
-                                    f"[{current_question_data['question_type']}] "
-                                    f"end={current_question_data['end_paragraph']}")
-                        
-                        # Kiểm tra câu lặp
-                        duplicate_of = self._check_duplicate_question(questions, text)
+                            self.log(f"✅ Lưu Câu {current_question_num} "
+                                    f"[{current_question_data['start_paragraph']} -> {current_question_data['end_paragraph']}] "
+                                    f"(Lời giải: {'Có' if current_question_data['solution_text'] else 'Không'})")
                         
                         # Bắt đầu câu mới
-                        current_question_num = list_item_counter
+                        current_question_num = detected_qnum
                         current_question_data = self._init_question_data()
                         current_question_data['question_text'] = [text] if text else []
-                        current_question_data['source'] = f'paragraph_{idx}_numbered'
+                        current_question_data['source'] = f'paragraph_{idx}'
                         current_question_data['start_paragraph'] = idx
                         current_question_data['question_type'] = self._detect_question_type(text)
-                        current_question_data['duplicate_of'] = duplicate_of
                         
                         in_question = True
                         in_solution = False
                         solution_end_paragraph = None
                         paragraphs_after_question = 0
                         
-                        self.log(f"\n📝 Phát hiện CÂU {current_question_num} "
-                                f"[{current_question_data['question_type']}] "
-                                f"start={idx}")
-                        
-                        if duplicate_of:
-                            self.log(f"   ⚠️ CÂU LẶP của Câu {duplicate_of}")
-                        
                         # Extract images & equations
                         para_images = self.extract_paragraph_images(para)
                         para_equations = self.extract_paragraph_equations(para)
                         self._add_images_to_section(current_question_data, para_images, 'question')
                         current_question_data['question_equations'].extend(para_equations)
+                        
+                        continue
                     
-                    # CASE 2: Đang trong câu hỏi
-                    elif in_question and current_question_num is not None:
+                    # ========== XỬ LÝ NỘI DUNG ĐANG TRONG CÂU ==========
+                    if in_question and current_question_num is not None:
                         paragraphs_after_question += 1
-                        
-                        # Kiểm tra câu hỏi tiếp theo
-                        if self._is_next_question_marker(text):
-                            self.log(f"   🛑 Phát hiện câu tiếp, dừng")
-                            in_question = False
-                            in_solution = False
-                            continue
-                        
-                        # Kiểm tra bắt đầu lời giải
-                        if not in_solution and self._is_solution_start_marker(text):
-                            in_solution = True
-                            self.log(f"   📘 BẮT ĐẦU LỜI GIẢI: {text[:50]}...")
-                            current_question_data['solution_text'].append(text)
-                            current_question_data['solution_start_paragraph'] = idx
-                            
-                            para_images = self.extract_paragraph_images(para)
-                            para_equations = self.extract_paragraph_equations(para)
-                            if para_images or para_equations:
-                                self._add_images_to_section(current_question_data, para_images, 'solution')
-                                current_question_data['solution_equations'].extend(para_equations)
-                            
-                            continue
                         
                         # Bỏ qua metadata
                         if text.startswith('[') and text.endswith(']'):
                             continue
                         
+                        # Kiểm tra bắt đầu lời giải
+                        if not in_solution and self._is_solution_start_marker(text):
+                            in_solution = True
+                            solution_end_paragraph = idx
+                            self.log(f"   📘 BẮT ĐẦU LỜI GIẢI tại para {idx}: {text[:50]}...")
+                            current_question_data['solution_text'].append(text)
+                            current_question_data['solution_start_paragraph'] = idx
+                            
+                            # Extract media trong lời giải
+                            para_images = self.extract_paragraph_images(para)
+                            para_equations = self.extract_paragraph_equations(para)
+                            self._add_images_to_section(current_question_data, para_images, 'solution')
+                            current_question_data['solution_equations'].extend(para_equations)
+                            continue
+                        
+                        # Kiểm tra kết thúc lời giải
+                        if in_solution and self._is_solution_end_marker(text):
+                            solution_end_paragraph = idx
+                            current_question_data['solution_text'].append(text)
+                            self.log(f"   📕 KẾT THÚC LỜI GIẢI tại para {idx}")
+                            in_solution = False
+                            in_question = False
+                            continue
+                        
                         # Thu thập content
-                        para_images = self.extract_paragraph_images(para)
-                        para_equations = self.extract_paragraph_equations(para)
-                        target_section = 'solution' if in_solution else 'question'
-                        
-                        if para_images or para_equations:
-                            self._add_images_to_section(current_question_data, para_images, target_section)
-                            if target_section == 'solution':
-                                current_question_data['solution_equations'].extend(para_equations)
-                            else:
-                                current_question_data['question_equations'].extend(para_equations)
-                        
                         if text:
+                            para_images = self.extract_paragraph_images(para)
+                            para_equations = self.extract_paragraph_equations(para)
+                            
                             if in_solution:
                                 current_question_data['solution_text'].append(text)
-                                solution_end_paragraph = idx
+                                solution_end_paragraph = idx  # Cập nhật liên tục
+                                self._add_images_to_section(current_question_data, para_images, 'solution')
+                                current_question_data['solution_equations'].extend(para_equations)
                             else:
                                 current_question_data['question_text'].append(text)
-                                # Kiểm tra đáp án lặp
-                                dup_check = self._check_duplicate_answers(text)
-                                if dup_check['has_duplicate']:
-                                    current_question_data['answer_duplication'] = dup_check['details']
-                                    self.log(f"   ⚠️ {dup_check['details']}")
+                                self._add_images_to_section(current_question_data, para_images, 'question')
+                                current_question_data['question_equations'].extend(para_equations)
                         
-                        # Giới hạn
-                        if paragraphs_after_question > 30:
-                            self.log(f"   ⚠️ Quá 30 paragraphs, dừng")
+                        # Giới hạn an toàn
+                        if paragraphs_after_question > 50:
+                            self.log(f"   ⚠️ Quá 50 paragraphs, dừng câu {current_question_num}")
                             in_question = False
                             in_solution = False
                 
@@ -555,8 +552,8 @@ class EnhancedDocxParser:
                     current_question_data['end_paragraph'] = len(self.doc.paragraphs) - 1
                 
                 questions[current_question_num] = current_question_data
-                self.log(f"✓ Lưu Câu {current_question_num} (cuối) "
-                        f"end={current_question_data['end_paragraph']}")
+                self.log(f"✅ Lưu Câu {current_question_num} (cuối) "
+                        f"[{current_question_data['start_paragraph']} -> {current_question_data['end_paragraph']}]")
             
             self.log("\n" + "="*70)
             self.log(f"KẾT QUẢ: {len(questions)} câu hỏi")
@@ -583,8 +580,6 @@ class EnhancedDocxParser:
             'solution_equations': [],
             'source': '',
             'question_type': self.QUESTION_TYPE_UNKNOWN,
-            'duplicate_of': None,
-            'answer_duplication': '',
             'start_paragraph': -1,
             'end_paragraph': -1,
             'solution_start_paragraph': -1

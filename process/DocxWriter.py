@@ -8,11 +8,15 @@ import re
 from copy import deepcopy
 
 
-# ==================== DOCX WRITER V5 (PRODUCTION READY) ====================
+# ==================== DOCX WRITER V6 (WORKFLOW FIXED) ====================
 class DocxWriter:
     """
-    Ghi kết quả với bảng đánh giá - GIỮ NGUYÊN 100% FORMAT GỐC
-    Sử dụng phương pháp clone element thay vì tạo mới
+    Ghi kết quả với bảng đánh giá - ĐẢM BẢO CHÈN SAU LỜI GIẢI
+    Workflow:
+    1. Copy file gốc
+    2. Xác định vị trí end_paragraph của mỗi câu (đã bao gồm lời giải)
+    3. Chèn bảng NGAY SAU end_paragraph
+    4. Chèn từ cuối lên để tránh lệch index
     """
     
     @staticmethod
@@ -38,7 +42,7 @@ class DocxWriter:
         
         # === ROW 1: Tiêu đề & Kết luận ===
         header_cell = table.rows[0].cells[0]
-        header_cell.text = f"Đánh giá câu hỏi"
+        header_cell.text = f"Đánh giá câu {question_num}"
         
         for paragraph in header_cell.paragraphs:
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -53,10 +57,10 @@ class DocxWriter:
         conclusion_cell = table.rows[0].cells[1]
         
         if evaluation_result['is_correct']:
-            status_text = f"Câu {question_num} CHÍNH XÁC"
+            status_text = f"✅ Câu {question_num} CHÍNH XÁC"
             bg_color = "C6E0B4"
         else:
-            status_text = f"Câu {question_num} CHƯA CHÍNH XÁC"
+            status_text = f"⚠️ Câu {question_num} CHƯA CHÍNH XÁC"
             bg_color = "F4B084"
             # Thêm lý do ngắn gọn
             eval_text = evaluation_result.get('evaluation', '')
@@ -153,93 +157,115 @@ class DocxWriter:
     def create_output_docx(input_docx: str, questions_results: Dict[int, Dict],
                           output_path: str):
         """
-        PHƯƠNG PHÁP MỚI: Clone toàn bộ document rồi chèn bảng
-        Đảm bảo 100% giữ nguyên format, ảnh, công thức
+        WORKFLOW CHÍNH XÁC:
+        1. Copy file gốc sang output
+        2. Parse để lấy end_paragraph của mỗi câu (đã bao gồm lời giải)
+        3. Chèn bảng đánh giá NGAY SAU end_paragraph
+        4. Chèn từ cuối lên đầu để tránh lệch index
         """
         from process.EnhancedDocx import EnhancedDocxParser
         import shutil
         
         # Bước 1: Copy file gốc
+        print(f"\n[DocxWriter] 📋 Bắt đầu tạo file output...")
         shutil.copy2(input_docx, output_path)
+        print(f"[DocxWriter] ✓ Đã copy file gốc")
         
-        # Bước 2: Mở file đã copy
+        # Bước 2: Parse để lấy thông tin vị trí
+        print(f"[DocxWriter] 🔍 Đang parse để xác định vị trí chèn bảng...")
+        parser = EnhancedDocxParser(input_docx, debug=False)
+        questions = parser.parse_questions_with_numbering()
+        
+        # Bước 3: Mở file đã copy
         doc = Document(output_path)
+        total_paras = len(doc.paragraphs)
+        print(f"[DocxWriter] 📄 Document có {total_paras} paragraphs")
         
-        # Bước 3: Parse để tìm vị trí câu hỏi
-        parser = EnhancedDocxParser(input_docx)
-        
-        question_positions = {}
-        current_qnum = None
-        numbering_counter = 0
-        
-        text_patterns = [
-            r'^\s*\*?\*?\s*(?:\[.*?\])?\s*Câu\s+(\d+)\s*[:\.]?\s*\*?\*?',
-            r'^\s*Câu\s+(\d+)\s*[:\.]',
-            r'^\s*(\d+)\s*[\.\)]\s+',
-        ]
-        
-        # Quét để tìm vị trí câu hỏi
-        for idx, para in enumerate(doc.paragraphs):
-            has_numbering = parser.get_paragraph_numbering(para)
-            text = para.text.strip()
-            
-            detected_qnum = None
-            
-            if has_numbering:
-                numbering_counter += 1
-                detected_qnum = numbering_counter
-            
-            if not detected_qnum:
-                for pattern in text_patterns:
-                    match = re.match(pattern, text, re.IGNORECASE)
-                    if match:
-                        detected_qnum = int(match.group(1))
-                        break
-            
-            if detected_qnum:
-                if current_qnum is not None:
-                    question_positions[current_qnum]['end'] = idx - 1
-                
-                current_qnum = detected_qnum
-                question_positions[current_qnum] = {
-                    'start': idx,
-                    'end': len(doc.paragraphs) - 1
-                }
-        
-        # Bước 4: Chèn bảng đánh giá từ CUỐI lên ĐẦU (để index không bị lệch)
-        sorted_questions = sorted(question_positions.items(), reverse=True)
-        
-        for qnum, pos in sorted_questions:
+        # Bước 4: Chuẩn bị danh sách vị trí chèn
+        insert_positions = []
+        for qnum, q_data in questions.items():
             if qnum in questions_results:
-                # Tìm vị trí chèn (sau paragraph cuối của câu hỏi)
-                insert_index = pos['end'] + 1
+                end_para = q_data.get('end_paragraph', -1)
                 
+                if end_para >= 0 and end_para < total_paras:
+                    insert_positions.append({
+                        'qnum': qnum,
+                        'position': end_para + 1,  # Chèn NGAY SAU end_paragraph
+                        'result': questions_results[qnum]
+                    })
+                    
+                    has_solution = len(q_data.get('solution_text', [])) > 0
+                    print(f"[DocxWriter] 📍 Câu {qnum}: "
+                          f"start={q_data['start_paragraph']}, "
+                          f"end={end_para}, "
+                          f"insert_at={end_para + 1}, "
+                          f"solution={'Có' if has_solution else 'Không'}")
+                else:
+                    print(f"[DocxWriter] ⚠️ Câu {qnum}: end_paragraph không hợp lệ ({end_para})")
+        
+        # Bước 5: Sắp xếp từ cuối lên để chèn (tránh lệch index)
+        insert_positions.sort(key=lambda x: x['position'], reverse=True)
+        
+        print(f"\n[DocxWriter] 🔧 Bắt đầu chèn {len(insert_positions)} bảng đánh giá...")
+        
+        # Bước 6: Chèn bảng từ cuối lên đầu
+        for item in insert_positions:
+            qnum = item['qnum']
+            position = item['position']
+            result = item['result']
+            
+            try:
                 # Tạo bảng tạm trong document mới
                 temp_doc = Document()
-                DocxWriter.add_evaluation_table(
-                    temp_doc,
-                    qnum,
-                    questions_results[qnum]
-                )
+                DocxWriter.add_evaluation_table(temp_doc, qnum, result)
                 
-                # Lấy bảng từ temp_doc
-                table_element = temp_doc.tables[0]._element
+                # Lấy tất cả elements từ temp_doc (bao gồm paragraph trống và table)
+                table_element = None
+                for element in temp_doc.element.body:
+                    if element.tag.endswith('tbl'):  # Tìm table element
+                        table_element = element
+                        break
                 
-                # Clone bảng vào document chính
-                if insert_index < len(doc.paragraphs):
-                    # Chèn trước paragraph tại insert_index
-                    doc.paragraphs[insert_index]._element.addprevious(
+                if table_element is None:
+                    print(f"[DocxWriter] ⚠️ Không tìm thấy table element cho Câu {qnum}")
+                    continue
+                
+                # Chèn vào đúng vị trí
+                if position < len(doc.paragraphs):
+                    # Thêm paragraph trống trước
+                    empty_para = doc.paragraphs[position]._element.addprevious(
+                        deepcopy(doc.add_paragraph()._element)
+                    )
+                    
+                    # Chèn table
+                    doc.paragraphs[position]._element.addprevious(
                         deepcopy(table_element)
                     )
+                    
+                    # Thêm paragraph trống sau
+                    doc.paragraphs[position]._element.addprevious(
+                        deepcopy(doc.add_paragraph()._element)
+                    )
+                    
+                    print(f"[DocxWriter] ✅ Đã chèn bảng đánh giá cho Câu {qnum} tại vị trí {position}")
                 else:
-                    # Thêm vào cuối
+                    # Thêm vào cuối document
+                    doc.add_paragraph()
                     doc._element.body.append(deepcopy(table_element))
+                    doc.add_paragraph()
+                    
+                    print(f"[DocxWriter] ✅ Đã thêm bảng đánh giá cho Câu {qnum} vào cuối document")
                 
-                print(f"[DocxWriter] Đã chèn bảng đánh giá cho Câu {qnum} tại vị trí {insert_index}")
+            except Exception as e:
+                print(f"[DocxWriter] ❌ Lỗi chèn bảng cho Câu {qnum}: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                continue
         
-        # Bước 5: Lưu file
+        # Bước 7: Lưu file
+        print(f"\n[DocxWriter] 💾 Đang lưu file...")
         doc.save(output_path)
         
-        print(f"\n[DocxWriter] ✅ Hoàn thành: {output_path}")
-        print(f"[DocxWriter] 📊 Đã thêm {len(questions_results)} bảng đánh giá")
-
+        print(f"[DocxWriter] ✅ Hoàn thành: {output_path}")
+        print(f"[DocxWriter] 📊 Đã thêm {len(insert_positions)} bảng đánh giá")
+        print(f"[DocxWriter] " + "="*60 + "\n")

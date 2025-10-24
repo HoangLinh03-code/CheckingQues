@@ -6,17 +6,16 @@ import sys
 sys.path.append(os.path.dirname(__file__))
 
 load_dotenv()
+if getattr(sys, 'frozen', False):
+    base_path = sys._MEIPASS
+else:
+    base_path = os.path.dirname(__file__)
+
+dotenv_path = os.path.join(base_path, '.env')
+load_dotenv(dotenv_path)
 def get_credentials():
     """Load Google Cloud credentials"""
     try:
-        if getattr(sys, 'frozen', False):
-            base_path = sys._MEIPASS
-        else:
-            base_path = os.path.dirname(__file__)
-        
-        dotenv_path = os.path.join(base_path, '.env')
-        load_dotenv(dotenv_path)
-        
         service_account_data = {
             "type": os.getenv("TYPE"),
             "project_id": os.getenv("PROJECT_ID"),
