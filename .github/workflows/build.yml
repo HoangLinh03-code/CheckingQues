@@ -49,7 +49,7 @@ jobs:
 
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --noconsole Cheking.py
+          pyinstaller --onefile --noconsole --collect-all PyQt5 Cheking.py
         # Thay main.py bằng file chính của bạn (ví dụ: Cheking.py)
 
       - name: Upload EXE as artifact (internal use)
