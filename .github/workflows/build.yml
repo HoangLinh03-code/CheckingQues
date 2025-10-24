@@ -51,7 +51,7 @@ jobs:
           python -c "import PyQt5; import PyQt5.QtWidgets; print('PyQt5 OK')"
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --noconsole Cheking.py
+          pyinstaller --onefile --noconsole Checking.py
         # Thay main.py bằng file chính của bạn (ví dụ: Cheking.py)
 
       - name: Upload EXE as artifact (internal use)
