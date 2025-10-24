@@ -48,7 +48,7 @@ jobs:
       - name: Verify PyQt5 installation
         run: |
           python -m pip show PyQt5
-          python -c "import PyQt5; import PyQt5.QtWidgets; print('✅ PyQt5 OK')"
+          python -c "import PyQt5; import PyQt5.QtWidgets; print('PyQt5 OK')"
       - name: Build executable with PyInstaller
         run: |
           pyinstaller --onefile --noconsole Cheking.py
