@@ -9,6 +9,8 @@ CheckDe_V2.py - IMPROVED: Đọc hình ảnh, công thức toán, XML structure
 import sys
 import os
 import glob
+import PyQt5
+import PyQt5.QtCore
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFileDialog, QMessageBox, QTextEdit, QProgressBar,
@@ -20,12 +22,10 @@ from process.CheckThread import CheckThread
 import dotenv
 from dotenv import load_dotenv
 load_dotenv()
-
 if getattr(sys, 'frozen', False):
     base_path = sys._MEIPASS
 else:
     base_path = os.path.dirname(__file__)
- 
 dotenv_path = os.path.join(base_path, '.env')
 load_dotenv(dotenv_path)
 # ==================== MAIN WINDOW (giữ nguyên UI cũ) ====================
@@ -368,8 +368,6 @@ class MainWindow(QWidget):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    
     window = MainWindow()
     window.show()
-    
     sys.exit(app.exec_())

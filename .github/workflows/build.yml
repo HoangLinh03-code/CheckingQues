@@ -1,0 +1,74 @@
+name: Build and Release EXE
+
+on:
+  push:
+    branches:
+      - develop   # Chạy khi bạn push lên nhánh main (bạn có thể đổi)
+  workflow_dispatch:  # Cho phép chạy thủ công trên giao diện GitHub Actions
+
+permissions:
+  contents: write    # Cần quyền để tạo release và upload file
+  actions: read
+jobs:
+  build:
+    runs-on: windows-latest  # Build file .exe trên môi trường Windows
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ">=3.10"  # chọn phiên bản phù hợp
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Create .env file from GitHub Secrets
+        run: |
+          echo "MATHPIX_APP_KEY=${{ secrets.MATHPIX_APP_KEY }}" >> .env
+          echo "MATHPIX_APP_ID=${{ secrets.MATHPIX_APP_ID }}" >> .env
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+          echo "TYPE=${{ secrets.TYPE }}" >> .env
+          echo "PROJECT_ID=${{ secrets.PROJECT_ID }}" >> .env
+          echo "PRIVATE_KEY_ID=${{ secrets.PRIVATE_KEY_ID }}" >> .env
+          echo "PRIVATE_KEY=${{ secrets.PRIVATE_KEY }}" >> .env
+          echo "CLIENT_EMAIL=${{ secrets.CLIENT_EMAIL }}" >> .env
+          echo "CLIENT_ID=${{ secrets.CLIENT_ID }}" >> .env
+          echo "AUTH_URI=${{ secrets.AUTH_URI }}" >> .env
+          echo "TOKEN_URI=${{ secrets.TOKEN_URI }}" >> .env
+          echo "AUTH_PROVIDER_X509_CERT_URL=${{ secrets.AUTH_PROVIDER_X509_CERT_URL }}" >> .env
+          echo "CLIENT_X509_CERT_URL=${{ secrets.CLIENT_X509_CERT_URL }}" >> .env
+          echo "UNIVERSE_DOMAIN=${{ secrets.UNIVERSE_DOMAIN }}" >> .env
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
+      - name: Verify PyQt5 installation
+        run: |
+          python -m pip show PyQt5
+          python -c "import PyQt5; import PyQt5.QtWidgets; print('PyQt5 OK')"
+      - name: Build executable with PyInstaller
+        run: |
+          pyinstaller --onefile --noconsole Cheking.py
+        # Thay main.py bằng file chính của bạn (ví dụ: Cheking.py)
+
+      - name: Upload EXE as artifact (internal use)
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-exe
+          path: dist/*.exe
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: "Build #${{ github.run_number }}"
+          body: "🚀 Build tự động từ nhánh `${{ github.ref_name }}`"
+          draft: false
+          prerelease: false
+          files: dist/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
