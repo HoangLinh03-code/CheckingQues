@@ -1,21 +1,27 @@
 import vertexai, os
 from vertexai.generative_models import GenerativeModel, Part, GenerationConfig
 from dotenv import load_dotenv
+import json
 from google.oauth2 import service_account
 import sys
-sys.path.append(os.path.dirname(__file__))
+from pathlib import Path
+EMBEDDED_CREDS = ""  
 
-load_dotenv()
-if getattr(sys, 'frozen', False):
-    base_path = sys._MEIPASS
-else:
-    base_path = os.path.dirname(__file__)
+if not EMBEDDED_CREDS:
+    # Chạy local: ưu tiên file .env
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
+        print(f"✅ Loaded local .env from {env_path}")
+    else:
+        print("⚠️ Không tìm thấy .env, sẽ thử dùng biến môi trường hệ thống")
 
-dotenv_path = os.path.join(base_path, '.env')
-load_dotenv(dotenv_path)
 def get_credentials():
     """Load Google Cloud credentials"""
     try:
+        if EMBEDDED_CREDS:
+            service_account_data = json.loads(EMBEDDED_CREDS)
+            project_id = service_account_data.get("project_id")
         service_account_data = {
             "type": os.getenv("TYPE"),
             "project_id": os.getenv("PROJECT_ID"),
