@@ -47,19 +47,36 @@ jobs:
     
     - name: Create .env file from ENV_KEY secret
       run: |
-        # Lấy toàn bộ nội dung .env từ secret ENV_KEY
-        $envContent = "${{ secrets.ENV_KEY }}"
-        
-        # Ghi nội dung vào file .env
-        Set-Content -Path ".env" -Value $envContent
+        # Ghi nội dung của biến môi trường ENV_KEY_CONTENT vào file .env
+        # Cách này an toàn vì shell không cố gắng "phân tích cú pháp" nội dung của secret
+        Set-Content -Path ".env" -Value $env:ENV_KEY_CONTENT
         Write-Host "File .env created successfully from ENV_KEY secret"
       shell: pwsh
+      env:
+        # Gán secret vào một biến môi trường, GitHub Actions sẽ xử lý các ký tự đặc biệt một cách an toàn
+        ENV_KEY_CONTENT: ${{ secrets.ENV_KEY }}
       
     # === ĐÃ XÓA STEP 'Create spec file for PyInstaller' ===
     
     - name: Build with PyInstaller
       run: |
-        pyinstaller --clean --noconsole --name CheckDe_V2 --add-data ".env;." --add-data "api;api" --add-data "process;process" Checking.py
+        pyinstaller --clean --noconfirm --name CheckDe_V2 --add-data ".env;." --add-data "api;api" --add-data "process;process" ^
+        --upx ^
+        --hidden-import=PyQt5 ^
+        --hidden-import=PyQt5.QtCore ^
+        --hidden-import=PyQt5.QtGui ^
+        --hidden-import=PyQt5.QtWidgets ^
+        --hidden-import=google.oauth2.service_account ^
+        --hidden-import=google.auth.transport.requests ^
+        --hidden-import=vertexai ^
+        --hidden-import=vertexai.generative_models ^
+        --hidden-import=docx ^
+        --hidden-import=lxml ^
+        --hidden-import=lxml.etree ^
+        --hidden-import=PIL ^
+        --hidden-import=dotenv ^
+        --hidden-import=python-dotenv ^
+        Checking.py
       shell: pwsh
       env:
         PYTHONOPTIMIZE: 1
@@ -93,7 +110,7 @@ jobs:
                 
         ## Cài đặt
         1. Tải về file CheckDe_V2.exe, README.txt và prompt.txt
-        2. Đặt cả 2 file trong cùng một thư mục
+        2. Đặt tất cả các file trong cùng một thư mục
         3. Chạy CheckDe_V2.exe
                 
         ## Lưu ý
