@@ -103,7 +103,7 @@ jobs:
         block_cipher = None
         
         a = Analysis(
-            ['process/Checking.py'],
+            ['Checking.py'],
             pathex=[],
             binaries=[],
             datas=[
