@@ -3,63 +3,122 @@ name: Build and Release EXE
 on:
   push:
     branches:
-      - develop   # Chạy khi bạn push lên nhánh main (bạn có thể đổi)
-  workflow_dispatch:  # Cho phép chạy thủ công trên giao diện GitHub Actions
+      - develop   # Chạy khi bạn push lên nhánh develop
+  workflow_dispatch:
 
 permissions:
-  contents: write    # Cần quyền để tạo release và upload file
+  contents: write
   actions: read
+
 jobs:
   build:
-    runs-on: windows-latest  # Build file .exe trên môi trường Windows
+    runs-on: windows-latest
 
     steps:
+      # -------------------
+      # 1. Checkout source
+      # -------------------
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # -------------------
+      # 2. Setup Python
+      # -------------------
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ">=3.10"  # chọn phiên bản phù hợp
+          python-version: "3.10"
 
+      # -------------------
+      # 3. Install dependencies
+      # -------------------
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Create .env file from GitHub Secrets
+      # -------------------
+      # 4. Inject credentials vào code
+      # -------------------
+      - name: Embed Google Credentials into callApi.py
         run: |
-          echo "MATHPIX_APP_KEY=${{ secrets.MATHPIX_APP_KEY }}" >> .env
-          echo "MATHPIX_APP_ID=${{ secrets.MATHPIX_APP_ID }}" >> .env
-          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
-          echo "TYPE=${{ secrets.TYPE }}" >> .env
-          echo "PROJECT_ID=${{ secrets.PROJECT_ID }}" >> .env
-          echo "PRIVATE_KEY_ID=${{ secrets.PRIVATE_KEY_ID }}" >> .env
-          echo "PRIVATE_KEY=${{ secrets.PRIVATE_KEY }}" >> .env
-          echo "CLIENT_EMAIL=${{ secrets.CLIENT_EMAIL }}" >> .env
-          echo "CLIENT_ID=${{ secrets.CLIENT_ID }}" >> .env
-          echo "AUTH_URI=${{ secrets.AUTH_URI }}" >> .env
-          echo "TOKEN_URI=${{ secrets.TOKEN_URI }}" >> .env
-          echo "AUTH_PROVIDER_X509_CERT_URL=${{ secrets.AUTH_PROVIDER_X509_CERT_URL }}" >> .env
-          echo "CLIENT_X509_CERT_URL=${{ secrets.CLIENT_X509_CERT_URL }}" >> .env
-          echo "UNIVERSE_DOMAIN=${{ secrets.UNIVERSE_DOMAIN }}" >> .env
-          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
+          echo "🔧 Embedding credentials into api/callApi.py"
+          python - <<'EOF'
+          import os, json, pathlib
+
+          creds = {
+              "type": os.getenv("TYPE"),
+              "project_id": os.getenv("PROJECT_ID"),
+              "private_key_id": os.getenv("PRIVATE_KEY_ID"),
+              "private_key": os.getenv("PRIVATE_KEY").replace('\n', '\\n'),
+              "client_email": os.getenv("CLIENT_EMAIL"),
+              "client_id": os.getenv("CLIENT_ID"),
+              "auth_uri": os.getenv("AUTH_URI"),
+              "token_uri": os.getenv("TOKEN_URI"),
+              "auth_provider_x509_cert_url": os.getenv("AUTH_PROVIDER_X509_CERT_URL"),
+              "client_x509_cert_url": os.getenv("CLIENT_X509_CERT_URL"),
+              "universe_domain": os.getenv("UNIVERSE_DOMAIN")
+          }
+
+          json_str = json.dumps(creds)
+          target = pathlib.Path("api/callApi.py")
+          content = target.read_text(encoding="utf-8")
+          new_header = f'EMBEDDED_CREDS = """{json_str}"""\n'
+          if "EMBEDDED_CREDS" in content:
+              # Replace dòng cũ nếu đã tồn tại
+              lines = content.splitlines()
+              for i, line in enumerate(lines):
+                  if line.strip().startswith("EMBEDDED_CREDS"):
+                      lines[i] = new_header.strip()
+                      break
+              content = "\n".join(lines)
+          else:
+              content = new_header + content
+          target.write_text(content, encoding="utf-8")
+          print("✅ Credentials embedded successfully.")
+          EOF
+        env:
+          TYPE: ${{ secrets.TYPE }}
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+          PRIVATE_KEY_ID: ${{ secrets.PRIVATE_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          CLIENT_EMAIL: ${{ secrets.CLIENT_EMAIL }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          AUTH_URI: ${{ secrets.AUTH_URI }}
+          TOKEN_URI: ${{ secrets.TOKEN_URI }}
+          AUTH_PROVIDER_X509_CERT_URL: ${{ secrets.AUTH_PROVIDER_X509_CERT_URL }}
+          CLIENT_X509_CERT_URL: ${{ secrets.CLIENT_X509_CERT_URL }}
+          UNIVERSE_DOMAIN: ${{ secrets.UNIVERSE_DOMAIN }}
+
+      # -------------------
+      # 5. Verify PyQt5
+      # -------------------
       - name: Verify PyQt5 installation
         run: |
           python -m pip show PyQt5
-          python -c "import PyQt5; import PyQt5.QtWidgets; print('PyQt5 OK')"
+          python -c "import PyQt5; print('✅ PyQt5 imported successfully')"
+
+      # -------------------
+      # 6. Build EXE (single file)
+      # -------------------
       - name: Build executable with PyInstaller
         run: |
           pyinstaller --onefile --noconsole Checking.py
-        # Thay main.py bằng file chính của bạn (ví dụ: Cheking.py)
+        # Nếu file main khác thì sửa tên ở đây
 
-      - name: Upload EXE as artifact (internal use)
+      # -------------------
+      # 7. Upload artifact nội bộ
+      # -------------------
+      - name: Upload built EXE as artifact
         uses: actions/upload-artifact@v4
         with:
           name: built-exe
           path: dist/*.exe
 
+      # -------------------
+      # 8. Tạo GitHub Release tự động
+      # -------------------
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v2
