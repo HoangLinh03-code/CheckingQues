@@ -48,6 +48,8 @@ jobs:
     - name: Inject credentials into callApi.py
       run: |
         # Tạo JSON cho Google Cloud credentials
+        # QUAN TRỌNG: Đảm bảo secret PRIVATE_KEY đã được
+        # thay thế \n bằng \\n khi lưu trên GitHub Secrets
         $creds = @{
           type = "${{ secrets.TYPE }}"
           project_id = "${{ secrets.PROJECT_ID }}"
@@ -61,6 +63,8 @@ jobs:
           client_x509_cert_url = "${{ secrets.CLIENT_X509_CERT_URL }}"
           universe_domain = "${{ secrets.UNIVERSE_DOMAIN }}"
         }
+        
+        # Convert sang JSON, sau đó escape dấu " để nhúng vào string Python
         $json = $creds | ConvertTo-Json -Compress
         $json = $json -replace '"', '\"'
         
@@ -72,28 +76,7 @@ jobs:
         Write-Host "Google Cloud credentials injected successfully"
       shell: pwsh
     
-    - name: Create .env file for build (embedded credentials)
-      run: |
-        $envContent = @"
-        MATHPIX_APP_KEY=${{ secrets.MATHPIX_APP_KEY }}
-        MATHPIX_APP_ID=${{ secrets.MATHPIX_APP_ID }}
-        GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-        TYPE=${{ secrets.TYPE }}
-        PROJECT_ID=${{ secrets.PROJECT_ID }}
-        PRIVATE_KEY_ID=${{ secrets.PRIVATE_KEY_ID }}
-        PRIVATE_KEY=${{ secrets.PRIVATE_KEY }}
-        CLIENT_EMAIL=${{ secrets.CLIENT_EMAIL }}
-        CLIENT_ID=${{ secrets.CLIENT_ID }}
-        AUTH_URI=${{ secrets.AUTH_URI }}
-        TOKEN_URI=${{ secrets.TOKEN_URI }}
-        AUTH_PROVIDER_X509_CERT_URL=${{ secrets.AUTH_PROVIDER_X509_CERT_URL }}
-        CLIENT_X509_CERT_URL=${{ secrets.CLIENT_X509_CERT_URL }}
-        UNIVERSE_DOMAIN=${{ secrets.UNIVERSE_DOMAIN }}
-        OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-        "@
-        Set-Content -Path ".env" -Value $envContent
-        Write-Host ".env file created for build"
-      shell: pwsh
+    # === ĐÃ XÓA STEP 'Create .env file for build' ===
     
     - name: Create spec file for PyInstaller
       run: |
@@ -107,7 +90,7 @@ jobs:
             pathex=[],
             binaries=[],
             datas=[
-                ('.env', '.'),
+                # === ĐÃ XÓA DÒNG ('.env', '.') ===
             ],
             hiddenimports=[
                 'PyQt5',
@@ -193,21 +176,21 @@ jobs:
         # Tạo README cho người dùng
         $readmeContent = @"
         # CheckDe V2 - Hướng dẫn sử dụng
-        
+                
         ## Cài đặt
         1. Giải nén file zip
         2. Chạy CheckDe_V2.exe
-        
+                
         ## Lưu ý
         - File .exe đã được build với tất cả credentials cần thiết
         - Không cần cài đặt Python hay dependencies
         - Chỉ chạy trên Windows 10/11
-        
+                
         ## Tính năng
         - Hỗ trợ hình ảnh & công thức toán
         - Check đề thi tự động với AI
         - Export kết quả ra file Word
-        
+                
         ## Hỗ trợ
         Nếu gặp vấn đề, vui lòng tạo issue trên GitHub.
         "@
