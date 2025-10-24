@@ -19,6 +19,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QFont
 from api.callApi import get_credentials
 from process.CheckThread import CheckThread
+from dotenv import load_dotenv
+load_dotenv()
 if getattr(sys, 'frozen', False):
     base_path = sys._MEIPASS
 else:
