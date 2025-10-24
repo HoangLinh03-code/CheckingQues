@@ -1,108 +1,82 @@
-name: Build and Release EXE
+name: Build Checking Question EXE
 
 on:
   push:
     branches:
       - develop
-  workflow_dispatch:
-
-permissions:
-  contents: write
-  actions: read
+  pull_request:
+    branches:
+      - develop
 
 jobs:
   build:
     runs-on: windows-latest
 
+    env:
+      PYTHONUNBUFFERED: 1
+      MATHPIX_APP_KEY: ${{ secrets.MATHPIX_APP_KEY }}
+      MATHPIX_APP_ID: ${{ secrets.MATHPIX_APP_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      TYPE: ${{ secrets.TYPE }}
+      PROJECT_ID: ${{ secrets.PROJECT_ID }}
+      PRIVATE_KEY_ID: ${{ secrets.PRIVATE_KEY_ID }}
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      CLIENT_EMAIL: ${{ secrets.CLIENT_EMAIL }}
+      CLIENT_ID: ${{ secrets.CLIENT_ID }}
+      AUTH_URI: ${{ secrets.AUTH_URI }}
+      TOKEN_URI: ${{ secrets.TOKEN_URI }}
+      AUTH_PROVIDER_X509_CERT_URL: ${{ secrets.AUTH_PROVIDER_X509_CERT_URL }}
+      CLIENT_X509_CERT_URL: ${{ secrets.CLIENT_X509_CERT_URL }}
+      UNIVERSE_DOMAIN: ${{ secrets.UNIVERSE_DOMAIN }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          if (Test-Path "requirements.txt") {
+            pip install -r requirements.txt
+          }
+          # Kiểm tra PyQt5, nếu không có thì cài
+          python - <<'EOF'
+          import importlib.util, subprocess, sys
+          pkg = 'PyQt5'
+          if importlib.util.find_spec(pkg) is None:
+              print(f"{pkg} not found. Installing...")
+              subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
+          else:
+              print(f"{pkg} already installed.")
+          EOF
           pip install pyinstaller
 
-      - name: Embed Google Credentials into callApi.py
-        run: |
-          @"
-          import os, json, pathlib
-
-          creds = {
-              "type": os.getenv("TYPE"),
-              "project_id": os.getenv("PROJECT_ID"),
-              "private_key_id": os.getenv("PRIVATE_KEY_ID"),
-              "private_key": os.getenv("PRIVATE_KEY", "").replace('\n', '\\n'),
-              "client_email": os.getenv("CLIENT_EMAIL"),
-              "client_id": os.getenv("CLIENT_ID"),
-              "auth_uri": os.getenv("AUTH_URI"),
-              "token_uri": os.getenv("TOKEN_URI"),
-              "auth_provider_x509_cert_url": os.getenv("AUTH_PROVIDER_X509_CERT_URL"),
-              "client_x509_cert_url": os.getenv("CLIENT_X509_CERT_URL"),
-              "universe_domain": os.getenv("UNIVERSE_DOMAIN")
-          }
-
-          json_str = json.dumps(creds)
-          target = pathlib.Path("api/callApi.py")
-          content = target.read_text(encoding="utf-8")
-          new_header = f'EMBEDDED_CREDS = """{json_str}"""\n'
-          if "EMBEDDED_CREDS" in content:
-              lines = content.splitlines()
-              for i, line in enumerate(lines):
-                  if line.strip().startswith("EMBEDDED_CREDS"):
-                      lines[i] = new_header.strip()
-                      break
-              content = "\n".join(lines)
-          else:
-              content = new_header + content
-          target.write_text(content, encoding="utf-8")
-          print("Embedded credentials successfully.")
-          "@ | Out-File -FilePath inject_creds.py -Encoding utf8
-
-          python inject_creds.py
-        env:
-          TYPE: ${{ secrets.TYPE }}
-          PROJECT_ID: ${{ secrets.PROJECT_ID }}
-          PRIVATE_KEY_ID: ${{ secrets.PRIVATE_KEY_ID }}
-          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
-          CLIENT_EMAIL: ${{ secrets.CLIENT_EMAIL }}
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          AUTH_URI: ${{ secrets.AUTH_URI }}
-          TOKEN_URI: ${{ secrets.TOKEN_URI }}
-          AUTH_PROVIDER_X509_CERT_URL: ${{ secrets.AUTH_PROVIDER_X509_CERT_URL }}
-          CLIENT_X509_CERT_URL: ${{ secrets.CLIENT_X509_CERT_URL }}
-          UNIVERSE_DOMAIN: ${{ secrets.UNIVERSE_DOMAIN }}
-
-      - name: Verify PyQt5 installation
-        run: |
-          python -m pip show PyQt5
-          python -c "import PyQt5; print('PyQt5 imported successfully')"
-
-      - name: Build executable with PyInstaller
+      - name: Build EXE with PyInstaller
         run: |
           pyinstaller --onefile --noconsole Checking.py
+        shell: pwsh
 
-      - name: Upload built EXE as artifact
+      - name: Move EXE to artifact folder
+        run: |
+          mkdir dist_artifact
+          move dist\Checking.exe dist_artifact\
+        shell: pwsh
+
+      - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: built-exe
-          path: dist/*.exe
-
+          name: Checking-Tool
+          path: dist_artifact/Checking.exe
       - name: Create GitHub Release
-        id: create_release
         uses: softprops/action-gh-release@v2
         with:
+          files: dist_artifact/Checking.exe
           tag_name: v${{ github.run_number }}
-          name: "Build #${{ github.run_number }}"
-          body: "Build tu dong tu nhanh ${GITHUB_REF_NAME}"
-          draft: false
-          prerelease: false
-          files: dist/*.exe
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}        
