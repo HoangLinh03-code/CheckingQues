@@ -1,0 +1,54 @@
+name: Build and Release CheckingQues EXE
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller python-dotenv
+
+      - name: Create .env from secret
+        run: |
+          echo "ENV_KEY=${{ secrets.ENV_KEY }}" > .env
+
+      - name: Build EXE
+        run: |
+          pyinstaller --onefile Cheking.py
+          echo "✅ Build completed: dist\\Cheking.exe"
+
+      - name: Upload artifact (backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: CheckingQues_EXE
+          path: dist/Cheking.exe
+
+      - name: Create or Update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: CheckingQues Build #${{ github.run_number }}
+          body: |
+            🔄 **Tự động build từ branch `develop`**
+            - Commit: ${{ github.sha }}
+            - Build ID: ${{ github.run_id }}
+            - Time: ${{ github.event.head_commit.timestamp }}
+          files: dist/Cheking.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
