@@ -9,7 +9,6 @@ on:
 permissions:
   contents: write    # Cần quyền để tạo release và upload file
   actions: read
-
 jobs:
   build:
     runs-on: windows-latest  # Build file .exe trên môi trường Windows
@@ -46,10 +45,13 @@ jobs:
           echo "CLIENT_X509_CERT_URL=${{ secrets.CLIENT_X509_CERT_URL }}" >> .env
           echo "UNIVERSE_DOMAIN=${{ secrets.UNIVERSE_DOMAIN }}" >> .env
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
-
+      - name: Verify PyQt5 installation
+        run: |
+          python -m pip show PyQt5
+          python -c "import PyQt5; import PyQt5.QtWidgets; print('✅ PyQt5 OK')"
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --noconsole --collect-all PyQt5 Cheking.py
+          pyinstaller --onefile --noconsole --collect-all PyQt5 --collect-all PyQt5.QtWidgets --collect-all PyQt5.QtGui --collect-all PyQt5.QtCore Cheking.py
         # Thay main.py bằng file chính của bạn (ví dụ: Cheking.py)
 
       - name: Upload EXE as artifact (internal use)
