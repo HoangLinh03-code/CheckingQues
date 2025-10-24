@@ -60,23 +60,7 @@ jobs:
     
     - name: Build with PyInstaller
       run: |
-        pyinstaller --clean --noconfirm --name CheckDe_V2 --add-data ".env;." --add-data "api;api" --add-data "process;process" ^
-        --upx ^
-        --hidden-import=PyQt5 ^
-        --hidden-import=PyQt5.QtCore ^
-        --hidden-import=PyQt5.QtGui ^
-        --hidden-import=PyQt5.QtWidgets ^
-        --hidden-import=google.oauth2.service_account ^
-        --hidden-import=google.auth.transport.requests ^
-        --hidden-import=vertexai ^
-        --hidden-import=vertexai.generative_models ^
-        --hidden-import=docx ^
-        --hidden-import=lxml ^
-        --hidden-import=lxml.etree ^
-        --hidden-import=PIL ^
-        --hidden-import=dotenv ^
-        --hidden-import=python-dotenv ^
-        Checking.py
+        pyinstaller --clean --noconfirm --name CheckDe_V2 --add-data ".env;." --add-data "api;api" --add-data "process;process" Checking.py
       shell: pwsh
       env:
         PYTHONOPTIMIZE: 1
