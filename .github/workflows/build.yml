@@ -2,9 +2,9 @@ name: Build Windows EXE
 
 on:
   push:
-    branches: [ main ]
+    branches: [ develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ develop ]
   workflow_dispatch:
 
 jobs:
@@ -69,30 +69,30 @@ jobs:
         $content = $content -replace 'EMBEDDED_CREDS = ""', "EMBEDDED_CREDS = `"$json`""
         Set-Content -Path "api/callApi.py" -Value $content
         
-        Write-Host "✅ Google Cloud credentials injected successfully"
+        Write-Host "Google Cloud credentials injected successfully"
       shell: pwsh
     
     - name: Create .env file for build (embedded credentials)
       run: |
         $envContent = @"
-MATHPIX_APP_KEY=${{ secrets.MATHPIX_APP_KEY }}
-MATHPIX_APP_ID=${{ secrets.MATHPIX_APP_ID }}
-GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-TYPE=${{ secrets.TYPE }}
-PROJECT_ID=${{ secrets.PROJECT_ID }}
-PRIVATE_KEY_ID=${{ secrets.PRIVATE_KEY_ID }}
-PRIVATE_KEY=${{ secrets.PRIVATE_KEY }}
-CLIENT_EMAIL=${{ secrets.CLIENT_EMAIL }}
-CLIENT_ID=${{ secrets.CLIENT_ID }}
-AUTH_URI=${{ secrets.AUTH_URI }}
-TOKEN_URI=${{ secrets.TOKEN_URI }}
-AUTH_PROVIDER_X509_CERT_URL=${{ secrets.AUTH_PROVIDER_X509_CERT_URL }}
-CLIENT_X509_CERT_URL=${{ secrets.CLIENT_X509_CERT_URL }}
-UNIVERSE_DOMAIN=${{ secrets.UNIVERSE_DOMAIN }}
-OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-"@
+        MATHPIX_APP_KEY=${{ secrets.MATHPIX_APP_KEY }}
+        MATHPIX_APP_ID=${{ secrets.MATHPIX_APP_ID }}
+        GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+        TYPE=${{ secrets.TYPE }}
+        PROJECT_ID=${{ secrets.PROJECT_ID }}
+        PRIVATE_KEY_ID=${{ secrets.PRIVATE_KEY_ID }}
+        PRIVATE_KEY=${{ secrets.PRIVATE_KEY }}
+        CLIENT_EMAIL=${{ secrets.CLIENT_EMAIL }}
+        CLIENT_ID=${{ secrets.CLIENT_ID }}
+        AUTH_URI=${{ secrets.AUTH_URI }}
+        TOKEN_URI=${{ secrets.TOKEN_URI }}
+        AUTH_PROVIDER_X509_CERT_URL=${{ secrets.AUTH_PROVIDER_X509_CERT_URL }}
+        CLIENT_X509_CERT_URL=${{ secrets.CLIENT_X509_CERT_URL }}
+        UNIVERSE_DOMAIN=${{ secrets.UNIVERSE_DOMAIN }}
+        OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+        "@
         Set-Content -Path ".env" -Value $envContent
-        Write-Host "✅ .env file created for build"
+        Write-Host ".env file created for build"
       shell: pwsh
     
     - name: Create spec file for PyInstaller
@@ -161,7 +161,7 @@ exe = EXE(
 )
 "@
         Set-Content -Path "CheckDe.spec" -Value $specContent
-        Write-Host "✅ Spec file created"
+        Write-Host "Spec file created"
       shell: pwsh
     
     - name: Build with PyInstaller
@@ -173,11 +173,11 @@ exe = EXE(
     - name: Verify build output
       run: |
         if (Test-Path "dist/CheckDe_V2.exe") {
-          Write-Host "✅ EXE file created successfully"
+          Write-Host "EXE file created successfully"
           $fileInfo = Get-Item "dist/CheckDe_V2.exe"
           Write-Host "File size: $($fileInfo.Length / 1MB) MB"
         } else {
-          Write-Host "❌ EXE file not found!"
+          Write-Host "EXE file not found!"
           exit 1
         }
       shell: pwsh
@@ -213,7 +213,7 @@ Nếu gặp vấn đề, vui lòng tạo issue trên GitHub.
 "@
         Set-Content -Path "release/README.txt" -Value $readmeContent
         
-        Write-Host "✅ Release package created"
+        Write-Host "Release package created"
       shell: pwsh
     
     - name: Upload artifact
@@ -227,7 +227,7 @@ Nếu gặp vấn đề, vui lòng tạo issue trên GitHub.
       if: startsWith(github.ref, 'refs/tags/')
       run: |
         Compress-Archive -Path "release/*" -DestinationPath "CheckDe_V2_Windows.zip"
-        Write-Host "✅ ZIP file created for release"
+        Write-Host "ZIP file created for release"
       shell: pwsh
     
     - name: Create Release (on tag push)
@@ -243,9 +243,9 @@ Nếu gặp vấn đề, vui lòng tạo issue trên GitHub.
           - Giải nén và chạy `CheckDe_V2.exe`
           
           ### Tính năng
-          - ✅ Hỗ trợ hình ảnh & công thức toán
-          - ✅ Check đề thi tự động với AI
-          - ✅ Export kết quả ra file Word
+          - Hỗ trợ hình ảnh & công thức toán
+          - Check đề thi tự động với AI
+          - Export kết quả ra file Word
           
           ### Yêu cầu hệ thống
           - Windows 10/11
