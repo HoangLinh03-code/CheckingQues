@@ -3,7 +3,7 @@ name: Build and Release EXE
 on:
   push:
     branches:
-      - main   # Chạy khi bạn push lên nhánh main (bạn có thể đổi)
+      - develop   # Chạy khi bạn push lên nhánh main (bạn có thể đổi)
   workflow_dispatch:  # Cho phép chạy thủ công trên giao diện GitHub Actions
 
 permissions:
@@ -31,14 +31,14 @@ jobs:
 
       - name: Create .env from GitHub Secrets
         run: |
-          echo "OPENAI_KEY=${{ secrets.OPENAI_KEY }}" >> .env
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           echo "DB_USER=${{ secrets.DB_USER }}" >> .env
           echo "DB_PASS=${{ secrets.DB_PASS }}" >> .env
           echo "OTHER_CONFIG=${{ secrets.OTHER_CONFIG }}" >> .env
 
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --noconsole main.py
+          pyinstaller --onefile --noconsole Checking.py
         # Thay main.py bằng file chính của bạn (ví dụ: Cheking.py)
 
       - name: Upload EXE as artifact (internal use)
