@@ -9,6 +9,8 @@ CheckDe_V2.py - IMPROVED: Đọc hình ảnh, công thức toán, XML structure
 import sys
 import os
 import glob
+import PyQt5
+import PyQt5.QtCore
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFileDialog, QMessageBox, QTextEdit, QProgressBar,
@@ -371,8 +373,6 @@ class MainWindow(QWidget):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    
     window = MainWindow()
     window.show()
-    
     sys.exit(app.exec_())
