@@ -60,7 +60,7 @@ jobs:
     
     - name: Build with PyInstaller
       run: |
-        pyinstaller --clean --noconfirm --name CheckDe_V2 --add-data ".env;." --add-data "api;api" --add-data "process;process" Checking.py
+        pyinstaller --onefile --clean --noconfirm --name CheckDe_V2 --add-data ".env;." --add-data "api;api" --add-data "process;process" Checking.py
       shell: pwsh
       env:
         PYTHONOPTIMIZE: 1
