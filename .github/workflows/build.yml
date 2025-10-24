@@ -62,7 +62,7 @@ jobs:
           else:
               content = new_header + content
           target.write_text(content, encoding="utf-8")
-          print("✅ Embedded credentials successfully.")
+          print("Embedded credentials successfully.")
           "@ | Out-File -FilePath inject_creds.py -Encoding utf8
 
           python inject_creds.py
