@@ -18,7 +18,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '>=3.10'
+        python-version: '>=3.9'
     
     - name: Install system dependencies
       run: |
@@ -30,7 +30,7 @@ jobs:
     
     - name: Install PyQt5 separately (fix for GitHub Actions)
       run: |
-        pip install PyQt5==5.15.11 PyQt5-Qt5==5.15.2 PyQt5-sip==12.17.0
+        pip install PyQt5 PyQt5-Qt5 PyQt5-sip
     
     - name: Install other dependencies
       run: |
