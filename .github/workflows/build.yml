@@ -65,6 +65,18 @@ jobs:
       env:
         PYTHONOPTIMIZE: 1
     
+    - name: Verify build output
+      run: |
+        if (Test-Path "dist/CheckDe_V2.exe") {
+          Write-Host "EXE file created successfully"
+          $fileInfo = Get-Item "dist/CheckDe_V2.exe"
+          Write-Host "File size: $($fileInfo.Length / 1MB) MB"
+        } else {
+          Write-Host "EXE file not found!"
+          exit 1
+        }
+      shell: pwsh
+    
     - name: Create release package
       run: |
         # Tạo thư mục release
