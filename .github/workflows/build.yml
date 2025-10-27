@@ -18,10 +18,10 @@ jobs:
       uses: actions/checkout@v4
 
     # Bước 2: Thiết lập môi trường Python 3.10
-    - name: Set up Python 3.9
+    - name: Set up Python 3.10
       uses: actions/setup-python@v5
       with:
-        # Sử dụng phiên bản cụ thể như 3.10 để đảm bảo build ổn định
+        # Sử dụng phiên bản cụ thể 3.10 trong khoảng 3.9-3.10
         python-version: '3.10'
         cache: 'pip' # Bật cache cho pip
 
@@ -60,6 +60,10 @@ jobs:
     # Bước 9: Tạo file .env từ GitHub Secret
     - name: Create .env file from ENV_KEY secret
       run: |
+        # Show value để kiểm tra (GitHub Actions SẼ TỰ ĐỘNG CHE NÓ ĐI)
+        Write-Host "Attempting to display ENV_KEY_CONTENT (will be masked by GitHub):"
+        Write-Host $env:ENV_KEY_CONTENT
+
         # Ghi nội dung của biến môi trường ENV_KEY_CONTENT vào file .env
         Set-Content -Path ".env" -Value $env:ENV_KEY_CONTENT
         Write-Host "File .env created successfully from ENV_KEY secret"
@@ -68,19 +72,15 @@ jobs:
         # Gán secret vào một biến môi trường
         ENV_KEY_CONTENT: ${{ secrets.ENV_KEY }}
 
-    # Bước 10: Tạo file prompt.txt
-    - name: Create prompt.txt
-      run: |
-        # Bạn có thể thay đổi nội dung placeholder này
-        Set-Content -Path "prompt.txt" -Value "Đây là file prompt cho ứng dụng CheckDe_V2."
-      shell: pwsh
+    # === ĐÃ XÓA BƯỚC 10 (Create prompt.txt) ===
+    # Tệp prompt.txt sẽ được lấy trực tiếp từ repository
         
-    # Bước 11: Build file .exe bằng PyInstaller
+    # Bước 10: Build file .exe bằng PyInstaller (trước đây là bước 11)
     - name: Build with PyInstaller
       run: |
         pyinstaller --onefile --clean --noconfirm --name CheckDe_V2 --add-data ".env;." --add-data "api;api" --add-data "process;process" Checking.py
 
-    # Bước 12: Nén file .exe và file prompt.txt thành file .zip
+    # Bước 11: Nén file .exe và file prompt.txt thành file .zip (trước đây là bước 12)
     - name: Create Zip Archive
       run: |
         $exePath = "dist/CheckDe_V2.exe"
@@ -91,7 +91,7 @@ jobs:
         Compress-Archive -Path $exePath, $promptPath -DestinationPath $zipPath -Force
       shell: pwsh
 
-    # Bước 13: Tải lên file .zip như một artifact của bản build
+    # Bước 12: Tải lên file .zip như một artifact của bản build (trước đây là bước 13)
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -99,4 +99,3 @@ jobs:
         name: checkde-v2-build-windows
         # Đường dẫn đến file .zip vừa tạo
         path: CheckDe_V2_Build.zip
-
