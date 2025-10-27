@@ -1,7 +1,7 @@
 # Tên của quy trình làm việc (workflow)
 name: Build Python Executable
 
-# Kích hoạt quy trình này khi có push vào nhánh 'main'
+# Kích hoạt quy trình này khi có push vào nhánh 'develop'
 on:
   push:
     branches: [ develop ]
@@ -21,31 +21,43 @@ jobs:
     - name: Set up Python >=3.9
       uses: actions/setup-python@v5
       with:
+        # Sử dụng phiên bản cụ thể như 3.10 để đảm bảo build ổn định
         python-version: '>=3.9'
         cache: 'pip' # Bật cache cho pip
 
-    # Bước 3: Cài đặt PyQt5 riêng biệt (để sửa lỗi build thường gặp trên GitHub Actions)
+    # Bước 3: Nâng cấp pip
+    - name: Upgrade pip
+      run: |
+        python.exe -m pip install --upgrade pip
+        
+    # Bước 4: Cài đặt Rust (cần thiết để build pydantic_core từ source)
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    # Bước 5: Cài đặt PyQt5 riêng biệt (để sửa lỗi build thường gặp trên GitHub Actions)
     - name: Install PyQt5 separately
       run: |
         pip install PyQt5 PyQt5-Qt5 PyQt5-sip
         
-    # Bước 4: Cài đặt các thư viện phụ thuộc khác
+    # Bước 6: Cài đặt các thư viện phụ thuộc khác
     - name: Install other dependencies
       run: |
         pip install -r requirements.txt
 
-    # Bước 5: Cài đặt PyInstaller
+    # Bước 7: Cài đặt PyInstaller
     - name: Install PyInstaller
       run: |
         pip install pyinstaller
 
-    # Bước 6: Xác minh cài đặt PyQt5
+    # Bước 8: Xác minh cài đặt PyQt5
     - name: Verify PyQt5 installation
       run: |
         python -c "import PyQt5; print('PyQt5 version:', PyQt5.Qt.PYQT_VERSION_STR)"
         python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 imported successfully')"
 
-    # Bước 7: Tạo file .env từ GitHub Secret
+    # Bước 9: Tạo file .env từ GitHub Secret
     - name: Create .env file from ENV_KEY secret
       run: |
         # Ghi nội dung của biến môi trường ENV_KEY_CONTENT vào file .env
@@ -56,19 +68,19 @@ jobs:
         # Gán secret vào một biến môi trường
         ENV_KEY_CONTENT: ${{ secrets.ENV_KEY }}
 
-    # Bước 8: Tạo file prompt.txt
+    # Bước 10: Tạo file prompt.txt
     - name: Create prompt.txt
       run: |
         # Bạn có thể thay đổi nội dung placeholder này
         Set-Content -Path "prompt.txt" -Value "Đây là file prompt cho ứng dụng CheckDe_V2."
       shell: pwsh
         
-    # Bước 9: Build file .exe bằng PyInstaller
+    # Bước 11: Build file .exe bằng PyInstaller
     - name: Build with PyInstaller
       run: |
         pyinstaller --onefile --clean --noconfirm --name CheckDe_V2 --add-data ".env;." --add-data "api;api" --add-data "process;process" Checking.py
 
-    # Bước 10: Nén file .exe và file prompt.txt thành file .zip
+    # Bước 12: Nén file .exe và file prompt.txt thành file .zip
     - name: Create Zip Archive
       run: |
         $exePath = "dist/CheckDe_V2.exe"
@@ -79,7 +91,7 @@ jobs:
         Compress-Archive -Path $exePath, $promptPath -DestinationPath $zipPath -Force
       shell: pwsh
 
-    # Bước 11: Tải lên file .zip như một artifact của bản build
+    # Bước 13: Tải lên file .zip như một artifact của bản build
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -87,3 +99,4 @@ jobs:
         name: checkde-v2-build-windows
         # Đường dẫn đến file .zip vừa tạo
         path: CheckDe_V2_Build.zip
+
