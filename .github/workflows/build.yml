@@ -11,6 +11,10 @@ jobs:
   build-windows:
     # Chạy trên máy ảo Windows mới nhất
     runs-on: windows-latest
+    
+    # Cấp quyền cho action để tạo release
+    permissions:
+      contents: write
 
     steps:
     # Bước 1: Checkout mã nguồn từ repository
@@ -73,7 +77,7 @@ jobs:
         ENV_KEY_CONTENT: ${{ secrets.ENV_KEY }}
 
     # === ĐÃ XÓA BƯỚC 10 (Create prompt.txt) ===
-    # Tệp prompt.txt sẽ được lấy trực tiếp từ repository
+    # Tệp prompt.txt sẽ được lấy trực tiếp từ repository (vì đã checkout ở Bước 1)
         
     # Bước 10: Build file .exe bằng PyInstaller (trước đây là bước 11)
     - name: Build with PyInstaller
@@ -84,18 +88,22 @@ jobs:
     - name: Create Zip Archive
       run: |
         $exePath = "dist/CheckDe_V2.exe"
-        $promptPath = "prompt.txt"
+        $promptPath = "prompt.txt" # Sẽ lấy tệp prompt.txt đã checkout từ repo
         $zipPath = "CheckDe_V2_Build.zip"
         
         # Nén 2 file được chỉ định vào file zip
         Compress-Archive -Path $exePath, $promptPath -DestinationPath $zipPath -Force
       shell: pwsh
 
-    # Bước 12: Tải lên file .zip như một artifact của bản build (trước đây là bước 13)
-    - name: Upload Build Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        # Tên của artifact sẽ hiển thị trên GitHub
-        name: checkde-v2-build-windows
-        # Đường dẫn đến file .zip vừa tạo
-        path: CheckDe_V2_Build.zip
+    # Bước 12: Tải lên .zip như một GitHub Release (trước đây là bước 13)
+    - name: Create GitHub Release
+      env:
+        # Token này được GitHub Actions cung cấp tự động
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Tạo một tên tag duy nhất dựa trên số lần chạy
+        $tagName = "develop-build-${{ github.run_number }}"
+        
+        # Sử dụng GitHub CLI để tạo pre-release và đính kèm file .zip
+        gh release create $tagName CheckDe_V2_Build.zip --generate-notes --title "Develop Build ${{ github.run_number }}" --prerelease
+      shell: pwsh
