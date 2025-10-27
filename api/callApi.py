@@ -5,11 +5,17 @@ import json
 from google.oauth2 import service_account
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part, GenerationConfig
-
+from dotenv import load_dotenv
 # --- Nếu build trên GitHub Action, dòng này sẽ bị injected bằng JSON credential ---
 # Ví dụ khi inject: EMBEDDED_CREDS = """{"type":"service_account", "project_id":"my-proj", ...}"""
 EMBEDDED_CREDS = ""
-
+if getattr(sys, 'frozen', False):
+    base_path = sys._MEIPASS
+else:
+    base_path = os.path.dirname(__file__)
+ 
+dotenv_path = os.path.join(base_path, '.env')
+load_dotenv(dotenv_path)
 
 def _safe_get_env(key, required=True):
     """Lấy biến môi trường an toàn. Nếu required True và không tồn tại -> raise error rõ ràng."""
