@@ -29,7 +29,7 @@ httplib2==0.31.0
 idna==3.10
 lxml==6.0.2
 mammoth==1.11.0
-numpy==2.3.3
+numpy
 packaging==25.0
 pillow==11.3.0
 proto-plus==1.26.1
