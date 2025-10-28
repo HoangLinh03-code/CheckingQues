@@ -45,11 +45,11 @@ jobs:
         run: |
           uv pip install PyQt5 PyQt5-Qt5 PyQt5_sip PyQtWebEngine PyQtWebEngine-Qt5
         # Tùy bạn có muốn cho vào dependencies chung trong pyproject.toml thay vì bước riêng này
-
       - name: Verify PyQt5 installation
         run: |
-          python -c "import PyQt5; print('PyQt5 version:', PyQt5.Qt.PYQT_VERSION_STR)"
-          python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 imported successfully')"
+          uv run python -c "import PyQt5; print('PyQt5 version:', PyQt5.Qt.PYQT_VERSION_STR)"
+          uv run python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 imported successfully')"
+
 
       # Tạo file .env từ secret
       - name: Create .env file from ENV_KEY secret
