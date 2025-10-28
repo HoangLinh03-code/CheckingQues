@@ -33,6 +33,7 @@ jobs:
       - name: Sync dependencies with uv
         run: |
           if (Test-Path "uv.lock") {
+            uv lock --upgrade
             uv sync --locked
           } else {
             uv sync
