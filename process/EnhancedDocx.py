@@ -1,12 +1,3 @@
-"""
-EnhancedDocxParser V9 - FIXED WORKFLOW
-Cải tiến:
-- Quét chính xác ranh giới câu hỏi (bao gồm cả lời giải)
-- Xác định rõ điểm kết thúc câu (sau lời giải nếu có)
-- Xử lý an toàn các phép chia và lỗi
-- Log chi tiết để debug
-"""
-
 import re
 import os
 import zipfile
@@ -16,7 +7,6 @@ from docx import Document
 from lxml import etree
 from collections import defaultdict
 import traceback
-
 
 class EnhancedDocxParser:
     """Parser nâng cao với xử lý workflow chính xác"""
@@ -294,12 +284,19 @@ class EnhancedDocxParser:
                 return self.QUESTION_TYPE_FILL_BLANK
             
             # Đúng/Sai: có a), b), c), d) và không có A. B. C. D.
-            has_lowercase_options = bool(re.search(r'\b[a-d]\)', text, re.IGNORECASE))
+            has_lowercase_options = bool(re.search(r'\b[a-d][\.\)]', text, re.IGNORECASE))
             has_uppercase_options = bool(re.search(r'\b[A-D]\.', text))
             
-            if has_lowercase_options and not has_uppercase_options:
-                return self.QUESTION_TYPE_TRUE_FALSE
-            
+            is_true_false = has_lowercase_options and not (
+                text.strip().startswith('A.') or
+                text.strip().startswith('B.') or
+                text.strip().startswith('C.') or
+                text.strip().startswith('D.')
+            )
+
+            if is_true_false:
+                 return self.QUESTION_TYPE_TRUE_FALSE
+
             # Trắc nghiệm: có A. B. C. D.
             if has_uppercase_options:
                 return self.QUESTION_TYPE_MULTIPLE_CHOICE
@@ -330,9 +327,9 @@ class EnhancedDocxParser:
             ]
             
             # Kiểm tra bắt đầu với marker
-            for marker in solution_markers:
-                if text_lower.startswith(marker):
-                    return True
+            # File của bạn có dạng "Lời giải 1####..." hoặc "Lời giải Đổi đơn vị..."
+            if text_lower.startswith('lời giải'):
+                return True
             
             # Kiểm tra các pattern đặc biệt
             # Ví dụ: "=== LỜI GIẢI ==="
@@ -356,14 +353,22 @@ class EnhancedDocxParser:
                 '--- hết ---',
                 '=== hết ===',
                 'end solution',
-                'vậy đáp án là',  # Thường là câu cuối
+                'vậy đáp án là',
                 'chọn đáp án',
+                'đáp án đúng là',
+                'suy ra đáp án đúng là',
+                'vậy đáp án đúng là',
+                'vậy đáp án sai là'
             ]
             
             for marker in end_markers:
                 if marker in text_lower:
                     return True
             
+            # Xử lý các trường hợp kết thúc bằng ```
+            if text_lower.endswith('```'):
+                return True
+
             return False
         except Exception as e:
             return False
@@ -375,10 +380,10 @@ class EnhancedDocxParser:
             
             # Pattern 1: Câu X (với nhiều biến thể)
             patterns = [
-                r'^\s*\*?\*?\s*(?:\[.*?\])?\s*Câu\s+(\d+)\s*[:\.]?\s*\*?\*?',
-                r'^\s*Question\s+(\d+)\s*[:\.]?',
-                r'^\s*Bài\s+(\d+)\s*[:\.]?',
-                r'^\s*(\d+)\s*[\.\)\-]\s+\w',  # Số theo sau là chữ
+                r'^\s*`{0,3}\s*\*?\*?\s*(?:\[.*?\])?\s*Câu\s+(\d+)\s*[:\.]?\s*\*?\*?',
+                r'^\s*`{0,3}\s*Question\s+(\d+)\s*[:\.]?',
+                r'^\s*`{0,3}\s*Bài\s+(\d+)\s*[:\.]?',
+                r'^\s*`{0,3}\s*(\d+)\s*[\.\)\-]\s+\w',  # Số theo sau là chữ
             ]
             
             for pattern in patterns:
@@ -410,7 +415,7 @@ class EnhancedDocxParser:
         solution_end_paragraph = None
         
         self.log("\n" + "="*70)
-        self.log("BẮT ĐẦU PARSE CÂU HỎI V9 - WORKFLOW FIX")
+        self.log("BẮT ĐẦU PARSE CÂU HỎI V10 - FIX LOGIC 'not in_solution'")
         self.log("="*70)
         
         try:
@@ -426,29 +431,43 @@ class EnhancedDocxParser:
                     text = para.text.strip()
                     has_numbering = self.get_paragraph_numbering(para)
                     
-                    # ========== PHÁT HIỆN CÂU HỎI MỚI ==========
+                    # =================== FIX #4 (BẮT ĐẦU) ===================
+                    # Logic phát hiện câu hỏi mới đã được sửa
+                    
                     is_new_question = False
-                    
-                    # Cách 1: Có numbering
-                    if has_numbering:
-                        is_new_question = True
-                        list_item_counter += 1
-                        detected_qnum = list_item_counter
-                        self.log(f"\n🔢 Phát hiện numbering tại para {idx}: Câu {detected_qnum}")
-                    
-                    # Cách 2: Pattern câu hỏi (nếu chưa có numbering)
-                    elif not in_solution and self._is_next_question_marker(text):
+                    detected_qnum = None
+
+                    # Cách 1: Pattern câu hỏi (Ưu tiên hàng đầu)
+                    if self._is_next_question_marker(text):
                         is_new_question = True
                         # Trích xuất số câu từ text
                         match = re.search(r'Câu\s+(\d+)|Question\s+(\d+)|Bài\s+(\d+)|^(\d+)[\.\)]',
                                          text, re.IGNORECASE)
                         if match:
-                            detected_qnum = int([g for g in match.groups() if g][0])
-                            list_item_counter = detected_qnum
+                            groups = match.groups()
+                            # Đảm bảo match.groups() có giá trị trước khi truy cập
+                            valid_groups = [g for g in groups if g]
+                            if valid_groups:
+                                detected_qnum = int(valid_groups[0])
+                                list_item_counter = detected_qnum
+                            else:
+                                # Fallback nếu regex marker (pattern) match nhưng group (số) fail
+                                list_item_counter += 1
+                                detected_qnum = list_item_counter
                         else:
                             list_item_counter += 1
                             detected_qnum = list_item_counter
+                        
                         self.log(f"\n📝 Phát hiện pattern câu hỏi tại para {idx}: Câu {detected_qnum}")
+
+                    # Cách 2: Có numbering (Nếu không phải pattern "Câu X")
+                    elif has_numbering:
+                        is_new_question = True
+                        list_item_counter += 1
+                        detected_qnum = list_item_counter
+                        self.log(f"\n🔢 Phát hiện numbering tại para {idx}: Câu {detected_qnum}")
+                    
+                    # =================== FIX #4 (KẾT THÚC) ===================
                     
                     # ========== XỬ LÝ CÂU HỎI MỚI ==========
                     if is_new_question:
@@ -458,11 +477,13 @@ class EnhancedDocxParser:
                             if solution_end_paragraph is not None:
                                 current_question_data['end_paragraph'] = solution_end_paragraph
                             else:
+                                # Nếu không có lời giải, para cuối là para ngay trước câu mới
                                 current_question_data['end_paragraph'] = idx - 1
                             
                             questions[current_question_num] = current_question_data.copy()
                             self.log(f"✅ Lưu Câu {current_question_num} "
                                     f"[{current_question_data['start_paragraph']} -> {current_question_data['end_paragraph']}] "
+                                    f"(Loại: {current_question_data['question_type']}) "
                                     f"(Lời giải: {'Có' if current_question_data['solution_text'] else 'Không'})")
                         
                         # Bắt đầu câu mới
@@ -475,7 +496,7 @@ class EnhancedDocxParser:
                         
                         in_question = True
                         in_solution = False
-                        solution_end_paragraph = None
+                        solution_end_paragraph = None # Reset cho câu mới
                         paragraphs_after_question = 0
                         
                         # Extract images & equations
@@ -494,6 +515,10 @@ class EnhancedDocxParser:
                         if text.startswith('[') and text.endswith(']'):
                             continue
                         
+                        # Bỏ qua các tiêu đề như I. TN, II. DS
+                        if re.match(r'^[IVX]+\.\s*\w+', text):
+                            continue
+
                         # Kiểm tra bắt đầu lời giải
                         if not in_solution and self._is_solution_start_marker(text):
                             in_solution = True
@@ -515,7 +540,7 @@ class EnhancedDocxParser:
                             current_question_data['solution_text'].append(text)
                             self.log(f"   📕 KẾT THÚC LỜI GIẢI tại para {idx}")
                             in_solution = False
-                            in_question = False
+                            in_question = False # Đánh dấu kết thúc câu hỏi luôn
                             continue
                         
                         # Thu thập content
@@ -532,6 +557,22 @@ class EnhancedDocxParser:
                                 current_question_data['question_text'].append(text)
                                 self._add_images_to_section(current_question_data, para_images, 'question')
                                 current_question_data['question_equations'].extend(para_equations)
+                                
+                                # =================== FIX #2 (ĐÃ THÊM) ===================
+                                # Cập nhật loại câu hỏi nếu phát hiện fill-blank hoặc true-false ở dòng sau
+                                detected_type = self._detect_question_type(text)
+
+                                if (current_question_data['question_type'] == self.QUESTION_TYPE_UNKNOWN):
+                                    if detected_type == self.QUESTION_TYPE_FILL_BLANK:
+                                        current_question_data['question_type'] = self.QUESTION_TYPE_FILL_BLANK
+                                        self.log(f"   ✓ Cập nhật loại câu hỏi -> FILL_BLANK tại para {idx}")
+                                    elif detected_type == self.QUESTION_TYPE_TRUE_FALSE:
+                                        current_question_data['question_type'] = self.QUESTION_TYPE_TRUE_FALSE
+                                        self.log(f"   ✓ Cập nhật loại câu hỏi -> TRUE_FALSE tại para {idx}")
+                                    elif detected_type == self.QUESTION_TYPE_MULTIPLE_CHOICE:
+                                        current_question_data['question_type'] = self.QUESTION_TYPE_MULTIPLE_CHOICE
+                                        self.log(f"   ✓ Cập nhật loại câu hỏi -> MULTIPLE_CHOICE tại para {idx}")
+                                # ================= END FIX #2 =================
                         
                         # Giới hạn an toàn
                         if paragraphs_after_question > 50:
@@ -549,11 +590,18 @@ class EnhancedDocxParser:
                 if solution_end_paragraph is not None:
                     current_question_data['end_paragraph'] = solution_end_paragraph
                 else:
-                    current_question_data['end_paragraph'] = len(self.doc.paragraphs) - 1
+                    # Nếu câu cuối không có lời giải, para cuối là para cuối của doc
+                    if not current_question_data['solution_text']:
+                         current_question_data['end_paragraph'] = len(self.doc.paragraphs) - 1
+                    # Nếu có lời giải nhưng không có end_marker, nó cũng là para cuối
+                    else:
+                         current_question_data['end_paragraph'] = len(self.doc.paragraphs) - 1
+
                 
                 questions[current_question_num] = current_question_data
                 self.log(f"✅ Lưu Câu {current_question_num} (cuối) "
-                        f"[{current_question_data['start_paragraph']} -> {current_question_data['end_paragraph']}]")
+                        f"[{current_question_data['start_paragraph']} -> {current_question_data['end_paragraph']}] "
+                        f"(Loại: {current_question_data['question_type']})")
             
             self.log("\n" + "="*70)
             self.log(f"KẾT QUẢ: {len(questions)} câu hỏi")
@@ -635,4 +683,5 @@ class EnhancedDocxParser:
                 'other_images': 0,
                 'file_path': self.docx_path,
                 'error': str(e)
-            }
+            }           
+

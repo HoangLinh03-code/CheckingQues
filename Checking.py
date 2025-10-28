@@ -60,18 +60,20 @@ class MainWindow(QWidget):
         # === LEFT PANEL ===
         left_panel = QVBoxLayout()
         
-        # 1. Chọn chế độ input
+        # 1. Chọn chế độ input (CẬP NHẬT)
         mode_group = QGroupBox("📂 Chế Độ Input")
         mode_layout = QVBoxLayout()
         
-        self.radio_file = QRadioButton("Chọn 1 file DOCX")
-        self.radio_folder = QRadioButton("Chọn folder chứa nhiều DOCX")
-        self.radio_file.setChecked(True)
+        # Đổi radio_file thành radio_files
+        self.radio_files = QRadioButton("Chọn 1 hoặc nhiều file DOCX") 
+        self.radio_folder = QRadioButton("Chọn 1 folder chứa nhiều DOCX")
+        self.radio_files.setChecked(True) # Mặc định
         
-        self.radio_file.toggled.connect(lambda: self.set_input_mode("file"))
+        # Cập nhật signal
+        self.radio_files.toggled.connect(lambda: self.set_input_mode("files")) 
         self.radio_folder.toggled.connect(lambda: self.set_input_mode("folder"))
         
-        mode_layout.addWidget(self.radio_file)
+        mode_layout.addWidget(self.radio_files) # Thêm radio_files
         mode_layout.addWidget(self.radio_folder)
         mode_group.setLayout(mode_layout)
         
@@ -82,7 +84,7 @@ class MainWindow(QWidget):
         self.input_label = QLineEdit("Chưa chọn")
         self.input_label.setReadOnly(True)
         
-        self.btn_select_input = QPushButton("Chọn File/Folder")
+        self.btn_select_input = QPushButton("Chọn File(s) DOCX") # Cập nhật text
         self.btn_select_input.clicked.connect(self.select_input)
         
         input_layout.addWidget(QLabel("Input:"))
@@ -90,7 +92,7 @@ class MainWindow(QWidget):
         input_layout.addWidget(self.btn_select_input)
         input_group.setLayout(input_layout)
         
-        # 3. Chọn prompt
+        # 3. Chọn prompt (Giữ nguyên)
         prompt_group = QGroupBox("📋 Prompt Check")
         prompt_layout = QVBoxLayout()
         
@@ -112,7 +114,7 @@ class MainWindow(QWidget):
         prompt_layout.addLayout(prompt_btn_layout)
         prompt_group.setLayout(prompt_layout)
         
-        # 4. Control buttons
+        # 4. Control buttons (Giữ nguyên)
         control_layout = QHBoxLayout()
         
         self.btn_start = QPushButton("▶️ BẮT ĐẦU CHECK")
@@ -154,7 +156,7 @@ class MainWindow(QWidget):
         control_layout.addWidget(self.btn_start)
         control_layout.addWidget(self.btn_stop)
         
-        # 5. Progress
+        # 5. Progress (Giữ nguyên)
         progress_group = QGroupBox("📊 Tiến Độ")
         progress_layout = QVBoxLayout()
         
@@ -173,7 +175,7 @@ class MainWindow(QWidget):
         left_panel.addWidget(progress_group)
         left_panel.addStretch()
         
-        # === RIGHT PANEL ===
+        # === RIGHT PANEL (Giữ nguyên) ===
         right_panel = QVBoxLayout()
         
         log_group = QGroupBox("📋 Log Xử Lý")
@@ -188,7 +190,7 @@ class MainWindow(QWidget):
         
         right_panel.addWidget(log_group)
         
-        # === MAIN LAYOUT ===
+        # === MAIN LAYOUT (Giữ nguyên) ===
         left_widget = QWidget()
         left_widget.setLayout(left_panel)
         left_widget.setMaximumWidth(400)
@@ -252,25 +254,36 @@ class MainWindow(QWidget):
             }
         """)
     
+    # CẬP NHẬT: Phương thức set_input_mode
     def set_input_mode(self, mode):
         self.input_mode = mode
-        if mode == "file":
-            self.btn_select_input.setText("Chọn File DOCX")
+        if mode == "files": # Đổi 'file' thành 'files'
+            self.btn_select_input.setText("Chọn File(s) DOCX")
         else:
             self.btn_select_input.setText("Chọn Folder")
         self.input_label.setText("Chưa chọn")
         self.input_paths = []
     
+    # CẬP NHẬT: Phương thức select_input
     def select_input(self):
-        if self.input_mode == "file":
-            file_path, _ = QFileDialog.getOpenFileName(
-                self, "Chọn file DOCX", "", "Word Files (*.docx)"
+        if self.input_mode == "files": # Đổi 'file' thành 'files'
+            # Sử dụng QFileDialog.getOpenFileNames (số nhiều)
+            file_paths, _ = QFileDialog.getOpenFileNames(
+                self, "Chọn một hoặc nhiều file DOCX", "", "Word Files (*.docx)"
             )
-            if file_path:
-                self.input_paths = [file_path]
-                self.input_label.setText(os.path.basename(file_path))
-                self.log_text.append(f"✔️ Đã chọn file: {os.path.basename(file_path)}")
-        else:
+            
+            if file_paths: # file_paths là một list
+                self.input_paths = file_paths
+                
+                # Cập nhật label dựa trên số lượng file
+                if len(file_paths) == 1:
+                    self.input_label.setText(os.path.basename(file_paths[0]))
+                else:
+                    self.input_label.setText(f"Đã chọn {len(file_paths)} file")
+                    
+                self.log_text.append(f"✔️ Đã chọn {len(file_paths)} file(s)")
+        
+        else: # self.input_mode == "folder" (Giữ nguyên logic)
             folder_path = QFileDialog.getExistingDirectory(
                 self, "Chọn folder chứa DOCX"
             )
