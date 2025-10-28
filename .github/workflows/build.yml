@@ -1,0 +1,88 @@
+# @format
+
+name: Build Python Executable (with uv)
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Cài Python 3.10
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # Cài uv
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: ">=0.4.0"
+
+      # Đồng bộ dependencies qua pyproject.toml
+      - name: Sync dependencies with uv
+        run: |
+          if (Test-Path "uv.lock") {
+            uv sync --locked
+          } else {
+            uv sync
+          }
+      # Nếu lần đầu chưa có uv.lock thì dùng: uv sync
+      # Nếu bạn vẫn muốn cài riêng PyQt5 (do thường có cấu hình build đặc biệt)
+      - name: Install PyQt5 manually
+        run: |
+          uv pip install PyQt5==5.15.11 PyQt5-Qt5==5.15.2 PyQt5_sip==12.17.0 PyQtWebEngine==5.15.7 PyQtWebEngine-Qt5==5.15.2
+        # Tùy bạn có muốn cho vào dependencies chung trong pyproject.toml thay vì bước riêng này
+
+      - name: Verify PyQt5 installation
+        run: |
+          python -c "import PyQt5; print('PyQt5 version:', PyQt5.Qt.PYQT_VERSION_STR)"
+          python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 imported successfully')"
+
+      # Tạo file .env từ secret
+      - name: Create .env file from ENV_KEY secret
+        shell: pwsh
+        run: |
+          Write-Host "Attempting to display ENV_KEY_CONTENT (will be masked by GitHub):"
+          Write-Host $env:ENV_KEY_CONTENT
+          Set-Content -Path ".env" -Value $env:ENV_KEY_CONTENT
+          Write-Host "File .env created successfully from ENV_KEY secret"
+        env:
+          ENV_KEY_CONTENT: ${{ secrets.ENV_KEY }}
+
+      # Build .exe bằng PyInstaller
+      - name: Build with PyInstaller
+        run: |
+          uv run pyinstaller --onefile --clean --noconfirm --name CheckDe_V2 `
+            --add-data ".env;." `
+            --add-data "api;api" `
+            --add-data "process;process" `
+            Checking.py
+
+      # Tạo archive zip
+      - name: Create Zip Archive
+        shell: pwsh
+        run: |
+          $exePath = "dist/CheckDe_V2.exe"
+          $promptPath = "prompt.txt"
+          $zipPath = "CheckDe_V2_Build.zip"
+          Compress-Archive -Path $exePath, $promptPath -DestinationPath $zipPath -Force
+
+      # Tạo GitHub Release và đính kèm file zip
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tagName = "develop-build-${{ github.run_number }}"
+          gh release create $tagName CheckDe_V2_Build.zip --generate-notes --title "Develop Build ${{ github.run_number }}" --prerelease
