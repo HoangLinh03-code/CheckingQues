@@ -1,109 +1,88 @@
-# Tên của quy trình làm việc (workflow)
-name: Build Python Executable
+# @format
 
-# Kích hoạt quy trình này khi có push vào nhánh 'develop'
+name: Build Python Executable (with uv)
+
 on:
   push:
-    branches: [ develop ]
-  workflow_dispatch: # Cho phép chạy thủ công từ tab Actions
+    branches: [develop]
+  workflow_dispatch:
 
 jobs:
   build-windows:
-    # Chạy trên máy ảo Windows mới nhất
     runs-on: windows-latest
-    
-    # Cấp quyền cho action để tạo release
     permissions:
       contents: write
 
     steps:
-    # Bước 1: Checkout mã nguồn từ repository
-    - name: Check out repository
-      uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-    # Bước 2: Thiết lập môi trường Python 3.10
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v5
-      with:
-        # Sử dụng phiên bản cụ thể 3.10 trong khoảng 3.9-3.10
-        python-version: '3.10'
-        cache: 'pip' # Bật cache cho pip
+      # Cài Python 3.10
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
 
-    # Bước 3: Nâng cấp pip
-    - name: Upgrade pip
-      run: |
-        python.exe -m pip install --upgrade pip
-        
-    # Bước 4: Cài đặt Rust (cần thiết để build pydantic_core từ source)
-    - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
+      # Cài uv
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: ">=0.4.0"
 
-    # Bước 5: Cài đặt PyQt5 riêng biệt (để sửa lỗi build thường gặp trên GitHub Actions)
-    - name: Install PyQt5 separately
-      run: |
-        pip install PyQt5 PyQt5-Qt5 PyQt5-sip
-        
-    # Bước 6: Cài đặt các thư viện phụ thuộc khác
-    - name: Install other dependencies
-      run: |
-        pip install -r requirements.txt
+      # Đồng bộ dependencies qua pyproject.toml
+      - name: Sync dependencies with uv
+        run: |
+          if (Test-Path "uv.lock") {
+            uv sync --locked
+          } else {
+            uv sync
+          }
+      # Nếu lần đầu chưa có uv.lock thì dùng: uv sync
+      # Nếu bạn vẫn muốn cài riêng PyQt5 (do thường có cấu hình build đặc biệt)
+      - name: Install PyQt5 manually
+        run: |
+          uv pip install PyQt5==5.15.11 PyQt5-Qt5==5.15.2 PyQt5_sip==12.17.0 PyQtWebEngine==5.15.7 PyQtWebEngine-Qt5==5.15.2
+        # Tùy bạn có muốn cho vào dependencies chung trong pyproject.toml thay vì bước riêng này
 
-    # Bước 7: Cài đặt PyInstaller
-    - name: Install PyInstaller
-      run: |
-        pip install pyinstaller
+      - name: Verify PyQt5 installation
+        run: |
+          python -c "import PyQt5; print('PyQt5 version:', PyQt5.Qt.PYQT_VERSION_STR)"
+          python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 imported successfully')"
 
-    # Bước 8: Xác minh cài đặt PyQt5
-    - name: Verify PyQt5 installation
-      run: |
-        python -c "import PyQt5; print('PyQt5 version:', PyQt5.Qt.PYQT_VERSION_STR)"
-        python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 imported successfully')"
+      # Tạo file .env từ secret
+      - name: Create .env file from ENV_KEY secret
+        shell: pwsh
+        run: |
+          Write-Host "Attempting to display ENV_KEY_CONTENT (will be masked by GitHub):"
+          Write-Host $env:ENV_KEY_CONTENT
+          Set-Content -Path ".env" -Value $env:ENV_KEY_CONTENT
+          Write-Host "File .env created successfully from ENV_KEY secret"
+        env:
+          ENV_KEY_CONTENT: ${{ secrets.ENV_KEY }}
 
-    # Bước 9: Tạo file .env từ GitHub Secret
-    - name: Create .env file from ENV_KEY secret
-      run: |
-        # Show value để kiểm tra (GitHub Actions SẼ TỰ ĐỘNG CHE NÓ ĐI)
-        Write-Host "Attempting to display ENV_KEY_CONTENT (will be masked by GitHub):"
-        Write-Host $env:ENV_KEY_CONTENT
+      # Build .exe bằng PyInstaller
+      - name: Build with PyInstaller
+        run: |
+          uv run pyinstaller --onefile --clean --noconfirm --name CheckDe_V2 `
+            --add-data ".env;." `
+            --add-data "api;api" `
+            --add-data "process;process" `
+            Checking.py
 
-        # Ghi nội dung của biến môi trường ENV_KEY_CONTENT vào file .env
-        Set-Content -Path ".env" -Value $env:ENV_KEY_CONTENT
-        Write-Host "File .env created successfully from ENV_KEY secret"
-      shell: pwsh
-      env:
-        # Gán secret vào một biến môi trường
-        ENV_KEY_CONTENT: ${{ secrets.ENV_KEY }}
+      # Tạo archive zip
+      - name: Create Zip Archive
+        shell: pwsh
+        run: |
+          $exePath = "dist/CheckDe_V2.exe"
+          $promptPath = "prompt.txt"
+          $zipPath = "CheckDe_V2_Build.zip"
+          Compress-Archive -Path $exePath, $promptPath -DestinationPath $zipPath -Force
 
-    # === ĐÃ XÓA BƯỚC 10 (Create prompt.txt) ===
-    # Tệp prompt.txt sẽ được lấy trực tiếp từ repository (vì đã checkout ở Bước 1)
-        
-    # Bước 10: Build file .exe bằng PyInstaller (trước đây là bước 11)
-    - name: Build with PyInstaller
-      run: |
-        pyinstaller --onefile --clean --noconfirm --name CheckDe_V2 --add-data ".env;." --add-data "api;api" --add-data "process;process" Checking.py
-
-    # Bước 11: Nén file .exe và file prompt.txt thành file .zip (trước đây là bước 12)
-    - name: Create Zip Archive
-      run: |
-        $exePath = "dist/CheckDe_V2.exe"
-        $promptPath = "prompt.txt" # Sẽ lấy tệp prompt.txt đã checkout từ repo
-        $zipPath = "CheckDe_V2_Build.zip"
-        
-        # Nén 2 file được chỉ định vào file zip
-        Compress-Archive -Path $exePath, $promptPath -DestinationPath $zipPath -Force
-      shell: pwsh
-
-    # Bước 12: Tải lên .zip như một GitHub Release (trước đây là bước 13)
-    - name: Create GitHub Release
-      env:
-        # Token này được GitHub Actions cung cấp tự động
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        # Tạo một tên tag duy nhất dựa trên số lần chạy
-        $tagName = "develop-build-${{ github.run_number }}"
-        
-        # Sử dụng GitHub CLI để tạo pre-release và đính kèm file .zip
-        gh release create $tagName CheckDe_V2_Build.zip --generate-notes --title "Develop Build ${{ github.run_number }}" --prerelease
-      shell: pwsh
+      # Tạo GitHub Release và đính kèm file zip
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tagName = "develop-build-${{ github.run_number }}"
+          gh release create $tagName CheckDe_V2_Build.zip --generate-notes --title "Develop Build ${{ github.run_number }}" --prerelease

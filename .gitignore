@@ -12,3 +12,4 @@ venv/
 *.docx
 output_check/
 test.py
+.python-version
