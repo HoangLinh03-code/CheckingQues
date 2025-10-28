@@ -519,19 +519,27 @@ class EnhancedDocxParser:
                             continue
                         
                         # Thu thập content
-                        if text:
-                            para_images = self.extract_paragraph_images(para)
-                            para_equations = self.extract_paragraph_equations(para)
+                        # Luôn extract images/equations, ngay cả khi text rỗng
+                        para_images = self.extract_paragraph_images(para)
+                        para_equations = self.extract_paragraph_equations(para)
+                        
+                        if in_solution:
+                            # Cập nhật end_paragraph của solution BẤT KỂ nội dung
+                            # Đây là mấu chốt để sửa lỗi chèn bảng
+                            solution_end_paragraph = idx
                             
-                            if in_solution:
+                            if text:
                                 current_question_data['solution_text'].append(text)
-                                solution_end_paragraph = idx  # Cập nhật liên tục
-                                self._add_images_to_section(current_question_data, para_images, 'solution')
-                                current_question_data['solution_equations'].extend(para_equations)
-                            else:
+                            
+                            self._add_images_to_section(current_question_data, para_images, 'solution')
+                            current_question_data['solution_equations'].extend(para_equations)
+                        
+                        else: # (Đang trong question, chưa tới solution)
+                            if text:
                                 current_question_data['question_text'].append(text)
-                                self._add_images_to_section(current_question_data, para_images, 'question')
-                                current_question_data['question_equations'].extend(para_equations)
+                            
+                            self._add_images_to_section(current_question_data, para_images, 'question')
+                            current_question_data['question_equations'].extend(para_equations)
                         
                         # Giới hạn an toàn
                         if paragraphs_after_question > 50:

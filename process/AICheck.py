@@ -1,68 +1,136 @@
+import base64
+import traceback
 from typing import Dict
-from api.callApi import VertexClient
 import re
 
-# ==================== AI CHECKER V5 (OPTIMIZED PROMPT) ====================
+# Import thư viện Google Cloud Vertex AI
+import vertexai
+from vertexai.preview.generative_models import (
+    GenerativeModel,
+    Part,
+    GenerationConfig
+)
+from vertexai.generative_models._generative_models import Image
+
+# ==================== AI CHECKER V6 (Multimodal Vision) ====================
 class AIQuestionChecker:
     """
-    AI Checker với prompt tối ưu và output chuẩn format
+    AI Checker với khả năng "nhìn" hình ảnh (Multimodal)
+    Sử dụng Google Vertex AI SDK trực tiếp.
     """
     
-    def __init__(self, project_id: str, creds, model_name: str = "gemini-2.5-pro"):
-        self.client = VertexClient(project_id, creds, model_name)
+    def __init__(self, project_id: str, creds, model_name: str = "gemini-1.5-pro"):
+        try:
+            # Khởi tạo Vertex AI client
+            vertexai.init(project=project_id, credentials=creds)
+            
+            # Tải mô hình
+            self.model = GenerativeModel(model_name)
+            print(f"[AIChecker] Đã khởi tạo Vertex AI với model: {model_name}")
+            
+        except Exception as e:
+            print(f"[AIChecker] Lỗi nghiêm trọng khi khởi tạo Vertex AI: {str(e)}")
+            raise
     
+    def _get_mime_type(self, extension: str) -> str:
+        """Chuyển đổi phần mở rộng file sang MIME type"""
+        ext = (extension or '').lower()
+        if ext in ['.jpg', '.jpeg']:
+            return 'image/jpeg'
+        if ext == '.wmf':
+            return 'image/wmf'
+        if ext == '.emf':
+            return 'image/emf'
+        # Mặc định là PNG cho các trường hợp khác
+        return 'image/png'
+
     def check_question(self, question_data: Dict, prompt_content: str) -> Dict:
         """
-        Check câu hỏi với text, images, equations
+        Check câu hỏi (bao gồm cả text VÀ images)
         
         Returns:
             {
                 'is_correct': bool,
-                'evaluation': str,      # Ngắn gọn: "Câu hỏi chính xác" hoặc lý do sai
-                'suggestions': str,     # Gạch đầu dòng các bước
-                'knowledge': str        # Kiến thức cốt lõi
+                'evaluation': str,
+                'suggestions': str,
+                'knowledge': str
             }
         """
-        # Tạo prompt với format cải tiến
-        question_text = "\n".join(question_data.get('question_text', []))
         
-        # Thêm thông tin hình ảnh
-        q_images = len(question_data.get('question_images', []))
-        s_images = len(question_data.get('solution_images', []))
-        if q_images > 0 or s_images > 0:
-            question_text += f"\n\n[📷 Câu hỏi có {q_images} ảnh, Lời giải có {s_images} ảnh]"
+        # === 1. Xây dựng phần VĂN BẢN của prompt ===
+        question_text_parts = "\n".join(question_data.get('question_text', []))
         
-        # Thêm công thức
+        # Thêm công thức (nếu parser đọc được MathML)
         q_eqs = question_data.get('question_equations', [])
         s_eqs = question_data.get('solution_equations', [])
         if q_eqs or s_eqs:
-            question_text += "\n\n📐 CÔNG THỨC:\n"
+            question_text_parts += "\n\n📐 CÔNG THỨC (Text):\n"
             for eq in q_eqs:
                 content = eq.get('content', str(eq))
-                question_text += f"- [Câu hỏi] {content}\n"
+                question_text_parts += f"- [Câu hỏi] {content}\n"
             for eq in s_eqs:
                 content = eq.get('content', str(eq))
-                question_text += f"- [Lời giải] {content}\n"
+                question_text_parts += f"- [Lời giải] {content}\n"
         
         # Thêm lời giải (nếu có)
         if question_data.get('solution_text'):
-            question_text += "\n\n" + "="*50
-            question_text += "\n📗 LỜI GIẢI\n"
-            question_text += "="*50 + "\n"
-            question_text += "\n".join(question_data['solution_text'])
+            question_text_parts += "\n\n" + "="*50
+            question_text_parts += "\n📗 LỜI GIẢI\n"
+            question_text_parts += "="*50 + "\n"
+            question_text_parts += "\n".join(question_data['solution_text'])
                 
-        # Tạo prompt với format mới
-        full_prompt = self._build_optimized_prompt(prompt_content, question_text)
+        # Tạo prompt text hoàn chỉnh
+        full_prompt_text = self._build_optimized_prompt(prompt_content, question_text_parts)
         
+        # === 2. Chuẩn bị nội dung gửi cho AI (Văn bản + Hình ảnh) ===
+        content_parts = []
+        
+        # Thêm phần văn bản
+        content_parts.append(Part.from_text(full_prompt_text))
+        
+        # Thêm tất cả hình ảnh (câu hỏi + lời giải, bao gồm OLE)
+        all_images = question_data.get('question_images', []) + \
+                     question_data.get('solution_images', [])
+        
+        print(f"[AIChecker] Chuẩn bị gửi {len(all_images)} hình ảnh cho AI...")
+        
+        for img in all_images:
+            try:
+                img_base64 = img.get('base64')
+                if img_base64:
+                    # Lấy đúng MIME type từ parser
+                    mime_type = self._get_mime_type(img.get('extension'))
+                    # Giải mã base64
+                    image_bytes = base64.b64decode(img_base64)
+                    # Tạo đối tượng Image
+                    image_part = Part.from_data(data=image_bytes, mime_type=mime_type)
+                    # Thêm vào danh sách
+                    content_parts.append(image_part)
+            except Exception as e:
+                print(f"[AIChecker] ⚠️ Lỗi khi xử lý ảnh {img.get('filename')}: {e}")
+                continue
+
+        # === 3. Gọi API ===
         try:
-            response = self.client.send_data_to_check(
-                prompt=full_prompt,
-                temperature=0.2
+            # Cấu hình
+            generation_config = GenerationConfig(
+                temperature=0.2,
+                max_output_tokens=4096
             )
             
-            result = self._parse_response(response)
+            # Gửi yêu cầu (văn bản + ảnh)
+            response = self.model.generate_content(
+                content_parts,
+                generation_config=generation_config
+            )
             
-            # Validate kết quả
+            # Lấy phần text trả về
+            response_text = response.text
+            
+            # Parse kết quả
+            result = self._parse_response(response_text)
+            
+            # Validate kết quả (giữ nguyên)
             if not result['evaluation']:
                 result['evaluation'] = "Câu hỏi chính xác" if result['is_correct'] else "Cần kiểm tra lại"
             if not result['suggestions']:
@@ -73,7 +141,8 @@ class AIQuestionChecker:
             return result
             
         except Exception as e:
-            print(f"[AIChecker] Lỗi: {str(e)}")
+            print(f"[AIChecker] Lỗi khi gọi Gemini API: {str(e)}")
+            traceback.print_exc()
             return {
                 'is_correct': False,
                 'evaluation': f"Lỗi AI: {str(e)}",
@@ -83,13 +152,18 @@ class AIQuestionChecker:
     
     def _build_optimized_prompt(self, prompt_content: str, question_text: str) -> str:
         """
-        Xây dựng prompt tối ưu với format rõ ràng
+        Xây dựng prompt tối ưu.
+        (Giữ nguyên logic từ file gốc, chỉ xóa ví dụ về ảnh
+         vì AI giờ đã tự thấy ảnh)
         """
         return f"""{prompt_content}
 
 ---
 
 ## CÂU HỎI CẦN ĐÁNH GIÁ
+
+(Lưu ý: Nếu có hình ảnh hoặc công thức, chúng sẽ được đính kèm. 
+Hãy phân tích cả văn bản và hình ảnh.)
 
 {question_text}
 
@@ -98,90 +172,41 @@ class AIQuestionChecker:
 ## YÊU CẦU OUTPUT CHÍNH XÁC
 
 Trả về CHÍNH XÁC theo format sau (KHÔNG thêm bớt gì):
-
-```
 IS_CORRECT: YES/NO
-####
-EVALUATION:
-[Nếu YES: Chỉ viết 'Câu hỏi chính xác']
-[Nếu NO: Viết ngắn gọn sai ở đâu (1-2 câu)]
-####
-SUGGESTIONS:
-[Gợi ý làm bài theo từng bước, MỖI BƯỚC 1 DÒNG]
-- Bước 1: ...
-- Bước 2: ...
-- Bước 3: ...
-[Tối thiểu 3 bước, tối đa 5 bước]
-####
-KNOWLEDGE:
-[Viết lại công thức/định lý cốt lõi - TỐI ĐA 3 DÒNG]
-[Chỉ ghi kiến thức CHÍNH XÁC, KHÔNG giải thích thêm]
-```
 
+EVALUATION: [Nếu YES: Chỉ viết 'Câu hỏi chính xác'] [Nếu NO: Viết ngắn gọn sai ở đâu (1-2 câu)]
+
+SUGGESTIONS: [Gợi ý làm bài theo từng bước, MỖI BƯỚC 1 DÒNG]
+
+Bước 1: ...
+
+Bước 2: ...
+
+Bước 3: ... [Tối thiểu 3 bước, tối đa 5 bước]
+
+KNOWLEDGE: [Viết lại công thức/định lý cốt lõi - TỐI ĐA 3 DÒNG] [Chỉ ghi kiến thức CHÍNH XÁC, KHÔNG giải thích thêm]
 ## LƯU Ý QUAN TRỌNG
 
-1. **IS_CORRECT phải là YES hoặc NO** - không có giá trị khác
-2. **EVALUATION:**
+1. **ĐỌC CẢ ẢNH:** Bạn sẽ nhận được hình ảnh (nếu có). Hãy đọc kỹ văn bản/công thức trong các hình ảnh đó để tìm dữ kiện (như A, f, R1...).
+2. **IS_CORRECT phải là YES hoặc NO**
+3. **EVALUATION:**
    - Nếu IS_CORRECT: YES → Chỉ viết: "Câu hỏi chính xác"
-   - Nếu IS_CORRECT: NO → Nêu rõ vấn đề chính (ví dụ: "Đáp án A và B trùng nhau", "Thiếu dữ kiện về thời gian", "Bước 2 tính sai công thức")
-
-3. **SUGGESTIONS:**
-   - Phải có ít nhất 3 bước, tối đa 5 bước
-   - Mỗi bước bắt đầu bằng "- Bước X:"
-   - Viết cụ thể, đầy đủ: Đọc đề → Phân tích → Áp dụng → Tính toán → Kết luận
+   - Nếu IS_CORRECT: NO → Nêu rõ vấn đề chính
 
 4. **KNOWLEDGE:**
    - Tối đa 3 dòng
    - Chỉ ghi công thức/định lý chính, súc tích
-   - Ví dụ: "- Định luật Ohm: U = I × R"
 
 5. **Format:**
    - Phân cách bằng #### (4 dấu thăng)
-   - Không viết thêm text ngoài 4 phần trên
    - Không dùng markdown code block ```
-
-## VÍ DỤ CHUẨN
-
-**Ví dụ 1: Câu đúng**
-```
-IS_CORRECT: YES
-####
-EVALUATION:
-Câu hỏi chính xác
-####
-SUGGESTIONS:
-- Bước 1: Đọc kỹ đề, xác định các đại lượng đã cho
-- Bước 2: Nhận dạng công thức điện trở tương đương mạch nối tiếp
-- Bước 3: Áp dụng công thức R = R1 + R2 + R3 và thay số
-- Bước 4: Chọn đáp án có giá trị tính được
-####
-KNOWLEDGE:
-- Điện trở mạch nối tiếp: R = R1 + R2 + ... + Rn
-- Cường độ dòng điện qua các điện trở bằng nhau
-```
-
-**Ví dụ 2: Câu sai**
-```
-IS_CORRECT: NO
-####
-EVALUATION:
-Đáp án A và đáp án C có cùng nội dung "6Ω", gây nhầm lẫn cho học sinh
-####
-SUGGESTIONS:
-- Bước 1: Kiểm tra kỹ các đáp án, nhận biết đáp án nào khác biệt
-- Bước 2: Áp dụng công thức điện trở song song: 1/R = 1/R1 + 1/R2
-- Bước 3: Tính toán và đối chiếu với đáp án hợp lý
-- Bước 4: Trong trường hợp đề có vấn đề, báo giáo viên để làm rõ
-####
-KNOWLEDGE:
-- Điện trở mạch song song: 1/R = 1/R1 + 1/R2 + ... + 1/Rn
-- Hiệu điện thế hai đầu các điện trở bằng nhau
-```
 
 BẮT ĐẦU ĐÁNH GIÁ:"""
     
     def _parse_response(self, response: str) -> Dict:
-        """Parse AI response - xử lý cả format sai"""
+        """
+        Parse AI response - (Giữ nguyên từ file gốc)
+        """
         result = {
             'is_correct': False,
             'evaluation': '',
@@ -208,9 +233,7 @@ BẮT ĐẦU ĐÁNH GIÁ:"""
             if 'EVALUATION:' in part or 'EVALUATION :' in part:
                 content = part.split('EVALUATION:', 1)[-1].strip()
                 content = content.split('EVALUATION :', 1)[-1].strip() if 'EVALUATION :' in part else content
-                # Loại bỏ phần còn lại nếu có
                 content = content.split('####')[0].strip()
-                # Loại bỏ comment trong []
                 content = re.sub(r'\[.*?\]', '', content).strip()
                 result['evaluation'] = content
             
@@ -219,7 +242,6 @@ BẮT ĐẦU ĐÁNH GIÁ:"""
                 content = part.split('SUGGESTIONS:', 1)[-1].strip()
                 content = content.split('SUGGESTIONS :', 1)[-1].strip() if 'SUGGESTIONS :' in part else content
                 content = content.split('####')[0].strip()
-                # Loại bỏ comment trong []
                 content = re.sub(r'\[.*?\]', '', content).strip()
                 result['suggestions'] = content
             
@@ -228,11 +250,10 @@ BẮT ĐẦU ĐÁNH GIÁ:"""
                 content = part.split('KNOWLEDGE:', 1)[-1].strip()
                 content = content.split('KNOWLEDGE :', 1)[-1].strip() if 'KNOWLEDGE :' in part else content
                 content = content.split('####')[0].strip()
-                # Loại bỏ comment trong []
                 content = re.sub(r'\[.*?\]', '', content).strip()
                 result['knowledge'] = content
         
-        # Fallback parsing nếu không có ####
+        # Fallback parsing (giữ nguyên)
         if not result['evaluation'] and not result['suggestions'] and not result['knowledge']:
             lines = response.split('\n')
             current_section = None
@@ -243,7 +264,6 @@ BẮT ĐẦU ĐÁNH GIÁ:"""
                 if line.startswith('EVALUATION:') or line.startswith('EVALUATION :'):
                     current_section = 'evaluation'
                     content = line.split(':', 1)[-1].strip()
-                    # Loại bỏ comment
                     content = re.sub(r'\[.*?\]', '', content).strip()
                     if content:
                         result['evaluation'] = content
@@ -263,7 +283,6 @@ BẮT ĐẦU ĐÁNH GIÁ:"""
                         result['knowledge'] = content
                 
                 elif current_section and line and not line.startswith('IS_CORRECT'):
-                    # Bỏ qua comment
                     if line.startswith('[') and line.endswith(']'):
                         continue
                     
