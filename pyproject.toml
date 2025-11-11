@@ -71,7 +71,8 @@ dependencies = [
     "vertexai==1.71.1",
     "pyinstaller",
     "pytesseract",
-    "opencv-python-headless"
+    "opencv-python-headless",
+    "google-cloud-vision"
 ]
 
 [project.scripts]

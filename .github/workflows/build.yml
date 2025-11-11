@@ -28,15 +28,6 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           version: ">=0.4.0"
-      - name: Install Tesseract OCR (với Tiếng Việt + Tiếng Anh)
-        shell: pwsh
-        run: |
-          choco install tesseract-ocr --params "/LANG=eng+vie"
-          # Ghi chú: Thay "eng+vie" bằng các ngôn ngữ bạn cần, ví dụ: "/LANG=eng+jpn+kor"
-          # Thêm đường dẫn vào $env:PATH để các lệnh sau có thể tìm thấy
-          $tesseractPath = "C:\Program Files\Tesseract-OCR"
-          Add-Content -Path $env:GITHUB_PATH -Value $tesseractPath
-          Write-Host "Tesseract installed at $tesseractPath and added to PATH"
       # Đồng bộ dependencies qua pyproject.toml
       - name: Sync dependencies with uv
         run: |
@@ -48,16 +39,6 @@ jobs:
           }
         env:
           UV_PYTHON: "3.11"
-      # Nếu lần đầu chưa có uv.lock thì dùng: uv sync
-      # Nếu bạn vẫn muốn cài riêng PyQt5 (do thường có cấu hình build đặc biệt)
-      - name: Install PyQt5 manually
-        run: |
-          uv pip install PyQt5 PyQt5-Qt5 PyQt5_sip PyQtWebEngine PyQtWebEngine-Qt5
-        # Tùy bạn có muốn cho vào dependencies chung trong pyproject.toml thay vì bước riêng này
-      - name: Verify PyQt5 installation
-        run: |
-          uv run python -c "import PyQt5; print('PyQt5 version:', PyQt5.Qt.PYQT_VERSION_STR)"
-          uv run python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 imported successfully')"
       # Tạo file .env từ secret
       - name: Create .env file from ENV_KEY secret
         shell: pwsh
@@ -76,7 +57,8 @@ jobs:
             --add-data ".env;." `
             --add-data "api;api" `
             --add-data "process;process" `
-            --add-data "C:\Program Files\Tesseract-OCR;Tesseract-OCR" `
+            --collect-data "PyQt5" `
+            --collect-data "cv2" `
             Checking.py
 
       # Tạo archive zip
