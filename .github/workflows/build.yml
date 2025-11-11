@@ -53,7 +53,7 @@ jobs:
       # Build .exe bằng PyInstaller
       - name: Build with PyInstaller
         run: |
-          uv run pyinstaller --onefile --clean --noconfirm --name CheckDe_V2 `
+          uv run pyinstaller --onefile --clean --noconfirm --noconsole --name CheckDe_V2 `
             --add-data ".env;." `
             --add-data "api;api" `
             --add-data "process;process" `
