@@ -13,3 +13,5 @@ venv/
 output_check/
 test.py
 .python-version
+file.txt
+test_2.py

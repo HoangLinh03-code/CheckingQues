@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import re
 import os
 import zipfile
@@ -9,12 +10,13 @@ from collections import defaultdict
 import traceback
 
 class EnhancedDocxParser:
-    """Parser nâng cao với xử lý workflow chính xác"""
+    """Parser nâng cao với hỗ trợ câu phụ (1.a, 2.b) và câu tự luận"""
     
     # Định nghĩa các dạng câu hỏi
     QUESTION_TYPE_MULTIPLE_CHOICE = "multiple_choice"
     QUESTION_TYPE_TRUE_FALSE = "true_false"
     QUESTION_TYPE_FILL_BLANK = "fill_blank"
+    QUESTION_TYPE_ESSAY = "essay"  # TỰ LUẬN MỚI
     QUESTION_TYPE_UNKNOWN = "unknown"
     
     def __init__(self, docx_path: str, debug: bool = True):
@@ -49,7 +51,13 @@ class EnhancedDocxParser:
             self._load_media()
         except Exception as e:
             self.log(f"⚠️ Lỗi load media (không ảnh hưởng parsing): {str(e)}")
-    
+        try:
+            filename = os.path.basename(self.docx_path)
+            self.document_type_hint = self._get_document_type_hint(filename)
+            self.log(f"✓ Gợi ý loại tài liệu (từ tên file): {self.document_type_hint}")
+        except Exception as e:
+            self.log(f"⚠️ Lỗi lấy gợi ý tên file: {str(e)}")
+            self.document_type_hint = self.QUESTION_TYPE_UNKNOWN
     def log(self, message: str):
         if self.debug:
             print(f"[Parser] {message}")
@@ -268,6 +276,9 @@ class EnhancedDocxParser:
         
         return equations
     
+    
+    
+    
     def _extract_math_text(self, math_elem) -> str:
         """Extract text từ MathML"""
         try:
@@ -276,42 +287,135 @@ class EnhancedDocxParser:
         except:
             return ""
     
+    def _get_document_type_hint(self, filename: str) -> str:
+        """
+        Phân tích tên file để đưa ra gợi ý về loại câu hỏi (TL, TN)
+        """
+        try:
+            filename_lower = filename.lower()
+            
+            # Tự luận / Tự luận Học liệu
+            if filename_lower.startswith('tl_hl_') or filename_lower.startswith('tl_'):
+                self.log(f"   [Hint] Phát hiện Tự Luận (TL/TL_HL) từ tên file.")
+                return self.QUESTION_TYPE_ESSAY
+            
+            # Trắc nghiệm
+            if filename_lower.startswith('tn_'):
+                self.log(f"   [Hint] Phát hiện Trắc Nghiệm (TN) từ tên file.")
+                return self.QUESTION_TYPE_MULTIPLE_CHOICE
+            
+            return self.QUESTION_TYPE_UNKNOWN
+        
+        except Exception as e:
+            self.log(f"⚠️ Lỗi _get_document_type_hint: {str(e)}")
+            return self.QUESTION_TYPE_UNKNOWN
+    
+    
     def _detect_question_type(self, text: str) -> str:
-        """Phát hiện dạng câu hỏi"""
+        """Phát hiện dạng câu hỏi - CẢI TIẾN hỗ trợ tự luận"""
         try:
             # Điền khuyết: có [[...]]
             if re.search(r'\[\[.*?\]\]', text):
                 return self.QUESTION_TYPE_FILL_BLANK
             
-            # Đúng/Sai: có a), b), c), d) và không có A. B. C. D.
-            has_lowercase_options = bool(re.search(r'\b[a-d][\.\)]', text, re.IGNORECASE))
+            # --- BẮT ĐẦU KHỐI SỬA ---
+            # (Sửa lỗi: Phân biệt MULTIPLE_CHOICE (A.) và TRUE_FALSE (a.))
+
+            # Ưu tiên 1: Trắc nghiệm (A. B. C. D.)
+            # Đây là tín hiệu mạnh nhất, phải được check trước.
             has_uppercase_options = bool(re.search(r'\b[A-D]\.', text))
+            if has_uppercase_options:
+                return self.QUESTION_TYPE_MULTIPLE_CHOICE
             
-            is_true_false = has_lowercase_options and not (
+            # Ưu tiên 2: Đúng/Sai (a. b. c. d.)
+            # Tín hiệu yếu hơn, chỉ tìm chữ thường.
+            # SỬA LỖI: Bỏ re.IGNORECASE để phân biệt 'A.' và 'a.'
+            has_lowercase_options = bool(re.search(r'\b[a-d][\.\)]', text))
+            
+            is_true_false_check = has_lowercase_options and not (
                 text.strip().startswith('A.') or
                 text.strip().startswith('B.') or
                 text.strip().startswith('C.') or
                 text.strip().startswith('D.')
             )
 
-            if is_true_false:
+            if is_true_false_check:
                  return self.QUESTION_TYPE_TRUE_FALSE
+            
+            # --- KẾT THÚC KHỐI SỬA ---
 
-            # Trắc nghiệm: có A. B. C. D.
-            if has_uppercase_options:
-                return self.QUESTION_TYPE_MULTIPLE_CHOICE
+            # Tự luận: không có đáp án trắc nghiệm
+            # Thường có từ khóa: "Giải thích", "Trình bày", "Chứng minh", "Phân tích"
+            
+            # SỬA: Bổ sung keywords từ các file Tự luận (TL_TOAN7...)
+            essay_keywords = ['giải thích', 'trình bày', 'chứng minh', 'phân tích', 
+                    'tính toán', 'nêu', 'cho biết', 'hãy', 'tìm',
+                    'so sánh', 'thực hiện'] 
+            
+            text_lower = text.lower()
+            if any(keyword in text_lower for keyword in essay_keywords):
+                return self.QUESTION_TYPE_ESSAY
             
             return self.QUESTION_TYPE_UNKNOWN
         except Exception as e:
             self.log(f"⚠️ Lỗi detect question type: {str(e)}")
             return self.QUESTION_TYPE_UNKNOWN
     
+    def _parse_question_number(self, text: str, in_question_context: bool = False) -> Optional[str]:
+        """
+        Parse số câu hỏi - HỖ TRỢ CẢ CÂU PHỤ
+        
+        [FIX V13]: Thêm tham số 'in_question_context'.
+        Nếu True, chỉ chạy các pattern mạnh (Câu X, Bài X)
+        để tránh "xé nhỏ" câu hỏi.
+        """
+        try:
+            text_stripped = text.strip()
+            
+            # Pattern 1: "Câu X" hoặc "Câu X.Y" (Mạnh)
+            match = re.match(r'^\s*`{0,3}\s*\*?\*?\s*(?:\[.*?\])?\s*Câu\s+(\d+(?:\.[a-z])?)\s*[:\.\)]?\s*\*?\*?',
+                           text_stripped, re.IGNORECASE)
+            if match:
+                return match.group(1)
+            
+            # Pattern 2: "Question X" hoặc "Question X.Y" (Mạnh)
+            match = re.match(r'^\s*`{0,3}\s*Question\s+(\d+(?:\.[a-z])?)\s*[:\.\)]?',
+                           text_stripped, re.IGNORECASE)
+            if match:
+                return match.group(1)
+            
+            # Pattern 3: "Bài X" hoặc "Bài X.Y" (Mạnh)
+            match = re.match(r'^\s*`{0,3}\s*Bài\s+(\d+(?:\.[a-z])?)\s*[:\.\)]?',
+                           text_stripped, re.IGNORECASE)
+            if match:
+                return match.group(1)
+            
+            # === CÁC PATTERN YẾU ===
+            # Chỉ chạy các pattern này nếu chúng ta KHÔNG ở trong 1 câu hỏi
+            if not in_question_context:
+                
+                # Pattern 4: Chỉ số và chữ cái "X.Y" (ví dụ: "1.a", "2.b") (Yếu)
+                match = re.match(r'^\s*`{0,3}\s*(\d+\.[a-z])\s*[\.\)\-]\s+',
+                               text_stripped)
+                if match:
+                    return match.group(1)
+                
+                # Pattern 5: Chỉ số "X." hoặc "X)" (ví dụ: "1.", "2)") (Yếu)
+                match = re.match(r'^\s*`{0,3}\s*(\d+)\s*[\.\)\-]\s+\w',
+                               text_stripped)
+                if match:
+                    return match.group(1)
+            
+            return None
+        except Exception as e:
+            self.log(f"⚠️ Lỗi parse question number: {str(e)}")
+            return None
+    
     def _is_solution_start_marker(self, text: str) -> bool:
-        """Kiểm tra marker bắt đầu lời giải - CẢI TIẾN"""
+        """Kiểm tra marker bắt đầu lời giải"""
         try:
             text_lower = text.lower().strip()
             
-            # Các marker phổ biến
             solution_markers = [
                 'lời giải',
                 'giải:',
@@ -326,13 +430,9 @@ class EnhancedDocxParser:
                 'phương pháp:'
             ]
             
-            # Kiểm tra bắt đầu với marker
-            # File của bạn có dạng "Lời giải 1####..." hoặc "Lời giải Đổi đơn vị..."
             if text_lower.startswith('lời giải'):
                 return True
             
-            # Kiểm tra các pattern đặc biệt
-            # Ví dụ: "=== LỜI GIẢI ==="
             if re.match(r'^[=\-*]{3,}.*?(lời giải|giải|đáp án).*?[=\-*]{3,}', text_lower):
                 return True
             
@@ -342,11 +442,10 @@ class EnhancedDocxParser:
             return False
     
     def _is_solution_end_marker(self, text: str) -> bool:
-        """Kiểm tra marker kết thúc lời giải - MỚI"""
+        """Kiểm tra marker kết thúc lời giải"""
         try:
             text_lower = text.lower().strip()
             
-            # Các marker kết thúc
             end_markers = [
                 'hết lời giải',
                 'kết thúc lời giải',
@@ -365,7 +464,6 @@ class EnhancedDocxParser:
                 if marker in text_lower:
                     return True
             
-            # Xử lý các trường hợp kết thúc bằng ```
             if text_lower.endswith('```'):
                 return True
 
@@ -374,48 +472,31 @@ class EnhancedDocxParser:
             return False
     
     def _is_next_question_marker(self, text: str) -> bool:
-        """Kiểm tra marker câu hỏi tiếp theo - CẢI TIẾN"""
-        try:
-            text_stripped = text.strip()
-            
-            # Pattern 1: Câu X (với nhiều biến thể)
-            patterns = [
-                r'^\s*`{0,3}\s*\*?\*?\s*(?:\[.*?\])?\s*Câu\s+(\d+)\s*[:\.]?\s*\*?\*?',
-                r'^\s*`{0,3}\s*Question\s+(\d+)\s*[:\.]?',
-                r'^\s*`{0,3}\s*Bài\s+(\d+)\s*[:\.]?',
-                r'^\s*`{0,3}\s*(\d+)\s*[\.\)\-]\s+\w',  # Số theo sau là chữ
-            ]
-            
-            for pattern in patterns:
-                if re.match(pattern, text_stripped, re.IGNORECASE):
-                    return True
-            
-            return False
-        except Exception as e:
-            self.log(f"⚠️ Lỗi check next question marker: {str(e)}")
-            return False
+        """Kiểm tra có phải câu hỏi mới không - CẢI TIẾN"""
+        return self._parse_question_number(text) is not None
     
-    def parse_questions_with_numbering(self) -> Dict[int, Dict]:
+    def parse_questions_with_numbering(self) -> Dict[str, Dict]:
         """
-        Parse câu hỏi với workflow chính xác:
-        1. Phát hiện câu hỏi mới (numbering hoặc pattern)
-        2. Thu thập nội dung câu hỏi
-        3. Phát hiện lời giải (nếu có)
-        4. Thu thập lời giải đến khi gặp câu mới hoặc marker kết thúc
-        5. Xác định end_paragraph = paragraph cuối của lời giải hoặc câu hỏi
+        Parse câu hỏi - HỖ TRỢ CÂU PHỤ (1.a, 2.b) VÀ HỌC LIỆU (CONTEXT)
+        
+        Returns:
+            Dict[str, Dict]: Key là string (ví dụ: "1", "1.a", "2", "2.c")
         """
         questions = {}
-        current_question_num = None
+        current_question_id = None
         current_question_data = self._init_question_data()
         
-        list_item_counter = 0
+        # Trạng thái
         in_question = False
         in_solution = False
         paragraphs_after_question = 0
         solution_end_paragraph = None
         
+        # Context (Học liệu)
+        current_context = []
+        
         self.log("\n" + "="*70)
-        self.log("BẮT ĐẦU PARSE CÂU HỎI V10 - FIX LOGIC 'not in_solution'")
+        self.log("BẮT ĐẦU PARSE CÂU HỎI V11 - HỖ TRỢ CÂU PHỤ & TỰ LUẬN")
         self.log("="*70)
         
         try:
@@ -429,128 +510,177 @@ class EnhancedDocxParser:
             for idx, para in enumerate(self.doc.paragraphs):
                 try:
                     text = para.text.strip()
-                    has_numbering = self.get_paragraph_numbering(para)
-                    
-                    # =================== FIX #4 (BẮT ĐẦU) ===================
-                    # Logic phát hiện câu hỏi mới đã được sửa
-                    
-                    is_new_question = False
-                    detected_qnum = None
-
-                    # Cách 1: Pattern câu hỏi (Ưu tiên hàng đầu)
-                    if self._is_next_question_marker(text):
-                        is_new_question = True
-                        # Trích xuất số câu từ text
-                        match = re.search(r'Câu\s+(\d+)|Question\s+(\d+)|Bài\s+(\d+)|^(\d+)[\.\)]',
-                                         text, re.IGNORECASE)
-                        if match:
-                            groups = match.groups()
-                            # Đảm bảo match.groups() có giá trị trước khi truy cập
-                            valid_groups = [g for g in groups if g]
-                            if valid_groups:
-                                detected_qnum = int(valid_groups[0])
-                                list_item_counter = detected_qnum
-                            else:
-                                # Fallback nếu regex marker (pattern) match nhưng group (số) fail
-                                list_item_counter += 1
-                                detected_qnum = list_item_counter
-                        else:
-                            list_item_counter += 1
-                            detected_qnum = list_item_counter
+                    # Bỏ qua các dòng trống ngay từ đầu
+                    if not text:
+                        continue
                         
-                        self.log(f"\n📝 Phát hiện pattern câu hỏi tại para {idx}: Câu {detected_qnum}")
-
-                    # Cách 2: Có numbering (Nếu không phải pattern "Câu X")
-                    elif has_numbering:
-                        is_new_question = True
-                        list_item_counter += 1
-                        detected_qnum = list_item_counter
-                        self.log(f"\n🔢 Phát hiện numbering tại para {idx}: Câu {detected_qnum}")
+                    has_numbering = self.get_paragraph_numbering(para)
+                    text_lower = text.lower()
                     
-                    # =================== FIX #4 (KẾT THÚC) ===================
+                    # ===============================================
+                    # ƯU TIÊN 1: PHÁT HIỆN CONTEXT RESET (HỌC LIỆU / PHẦN)
+                    # ===============================================
+                    # === START FIX (P3) ===
+                    is_context_reset = (
+                        text_lower.startswith('học liệu') or 
+                        text_lower.startswith('chủ đề') or
+                        re.match(r'^\s*phần\s+[ivx\d]+\b', text_lower)
+                    )
+                    # === END FIX (P3) ===
                     
-                    # ========== XỬ LÝ CÂU HỎI MỚI ==========
-                    if is_new_question:
-                        # Lưu câu cũ (nếu có)
-                        if current_question_num is not None:
-                            # end_paragraph = paragraph cuối của lời giải (nếu có) hoặc câu hỏi
+                    if is_context_reset:
+                        # === LƯU CÂU CŨ TRƯỚS KHI RESET ===
+                        if current_question_id is not None:
                             if solution_end_paragraph is not None:
                                 current_question_data['end_paragraph'] = solution_end_paragraph
                             else:
-                                # Nếu không có lời giải, para cuối là para ngay trước câu mới
                                 current_question_data['end_paragraph'] = idx - 1
                             
-                            questions[current_question_num] = current_question_data.copy()
-                            self.log(f"✅ Lưu Câu {current_question_num} "
+                            questions[current_question_id] = current_question_data.copy()
+                            self.log(f"✅ Lưu Câu {current_question_id} (trước context mới)")
+                            
+                            # Reset
+                            current_question_id = None
+                            current_question_data = self._init_question_data()
+                        
+                        # === RESET CONTEXT MỚI ===
+                        current_context = [text]
+                        self.log(f"\n   [Context] 🔄 RESET Context (Học liệu/Phần mới) -> {text[:50]}...")
+                        
+                        in_question = False 
+                        in_solution = False
+                        
+                        continue # Đọc paragraph tiếp theo
+                    
+                    # ===============================================
+                    # ƯU TIÊN 2: PHÁT HIỆN CÂU HỎI MỚI ("CÂU X")
+                    # ===============================================
+                    question_id = self._parse_question_number(text, in_question)
+                    
+                    if question_id is not None:
+                        
+                        # --- Xử lý ID trùng lặp ---
+                        original_question_id = question_id
+                        suffix_num = 0
+                        while question_id in questions:
+                            suffix_num += 1
+                            suffix_char = chr(96 + suffix_num) # (a=97)
+                            question_id = f"{original_question_id}.{suffix_char}"
+                        
+                        if original_question_id != question_id:
+                            self.log(f"   ⚠️ Phát hiện ID trùng lặp ('{original_question_id}'), đổi tên -> {question_id}")
+                        
+                        # --- Lưu câu cũ ---
+                        if current_question_id is not None:
+                            if solution_end_paragraph is not None:
+                                current_question_data['end_paragraph'] = solution_end_paragraph
+                            else:
+                                current_question_data['end_paragraph'] = idx - 1
+                            
+                            questions[current_question_id] = current_question_data.copy()
+                            self.log(f"✅ Lưu Câu {current_question_id} "
                                     f"[{current_question_data['start_paragraph']} -> {current_question_data['end_paragraph']}] "
                                     f"(Loại: {current_question_data['question_type']}) "
                                     f"(Lời giải: {'Có' if current_question_data['solution_text'] else 'Không'})")
                         
-                        # Bắt đầu câu mới
-                        current_question_num = detected_qnum
+                        # --- Bắt đầu câu mới ---
+                        current_question_id = question_id
                         current_question_data = self._init_question_data()
-                        current_question_data['question_text'] = [text] if text else []
+                        
+                        # --- Gộp "Học liệu" (current_context) vào ---
+                        combined_question_text = []
+                        if current_context:
+                            combined_question_text.extend(current_context)
+                        
+                        if text:
+                            combined_question_text.append(text)
+                        
+                        current_question_data['question_text'] = combined_question_text
+                        
+                        # --- Cập nhật trạng thái ---
                         current_question_data['source'] = f'paragraph_{idx}'
                         current_question_data['start_paragraph'] = idx
-                        current_question_data['question_type'] = self._detect_question_type(text)
+                        detected_type_on_start = self._detect_question_type(text)
+                        
+                        # Ưu tiên 1: Lấy loại từ text (nếu khác UNKNOWN)
+                        if detected_type_on_start != self.QUESTION_TYPE_UNKNOWN:
+                            current_question_data['question_type'] = detected_type_on_start
+                        # Ưu tiên 2: Lấy loại từ GỢI Ý TÊN FILE
+                        elif self.document_type_hint != self.QUESTION_TYPE_UNKNOWN:
+                            current_question_data['question_type'] = self.document_type_hint
+                            self.log(f"   ✓ Gán loại (từ Tên file) -> {self.document_type_hint}")
+                        # Ưu tiên 3: Mặc định là UNKNOWN
+                        else:
+                            current_question_data['question_type'] = self.QUESTION_TYPE_UNKNOWN
+                        current_question_data['question_id'] = question_id
                         
                         in_question = True
                         in_solution = False
-                        solution_end_paragraph = None # Reset cho câu mới
+                        solution_end_paragraph = None
                         paragraphs_after_question = 0
                         
-                        # Extract images & equations
+                        self.log(f"\n📝 Phát hiện Câu {question_id} tại para {idx}")
+                        
+                        # --- Extract media ---
                         para_images = self.extract_paragraph_images(para)
                         para_equations = self.extract_paragraph_equations(para)
                         self._add_images_to_section(current_question_data, para_images, 'question')
                         current_question_data['question_equations'].extend(para_equations)
                         
-                        continue
+                        continue # Đã xử lý, đọc paragraph tiếp theo
                     
-                    # ========== XỬ LÝ NỘI DUNG ĐANG TRONG CÂU ==========
-                    if in_question and current_question_num is not None:
+                    # ===============================================
+                    # ƯU TIÊN 3: XỬ LÝ NỘI DUNG BÊN TRONG CÂU HỎI
+                    # ===============================================
+                    if in_question and current_question_id is not None:
                         paragraphs_after_question += 1
                         
                         # Bỏ qua metadata
                         if text.startswith('[') and text.endswith(']'):
                             continue
                         
-                        # Bỏ qua các tiêu đề như I. TN, II. DS
+                        # Bỏ qua tiêu đề
                         if re.match(r'^[IVX]+\.\s*\w+', text):
                             continue
 
-                        # Kiểm tra bắt đầu lời giải
+                        # --- Kiểm tra bắt đầu lời giải ---
                         if not in_solution and self._is_solution_start_marker(text):
                             in_solution = True
                             solution_end_paragraph = idx
-                            self.log(f"   📘 BẮT ĐẦU LỜI GIẢI tại para {idx}: {text[:50]}...")
+                            self.log(f"   📘 BẮT ĐẦU LỜI GIẢI tại para {idx}")
                             current_question_data['solution_text'].append(text)
                             current_question_data['solution_start_paragraph'] = idx
                             
-                            # Extract media trong lời giải
                             para_images = self.extract_paragraph_images(para)
                             para_equations = self.extract_paragraph_equations(para)
                             self._add_images_to_section(current_question_data, para_images, 'solution')
                             current_question_data['solution_equations'].extend(para_equations)
                             continue
                         
-                        # Kiểm tra kết thúc lời giải
-                        if in_solution and self._is_solution_end_marker(text):
-                            solution_end_paragraph = idx
-                            current_question_data['solution_text'].append(text)
-                            self.log(f"   📕 KẾT THÚC LỜI GIẢI tại para {idx}")
-                            in_solution = False
-                            in_question = False # Đánh dấu kết thúc câu hỏi luôn
-                            continue
+                        # === START FIX (P4) ===
+                        # Vô hiệu hóa logic kiểm tra kết thúc lời giải
+                        # Một câu hỏi/lời giải chỉ kết thúc khi gặp
+                        # (ƯU TIÊN 1) hoặc (ƯU TIÊN 2)
                         
-                        # Thu thập content
+                        # --- Kiểm tra kết thúc lời giải ---
+                        # if in_solution and self._is_solution_end_marker(text):
+                        #     solution_end_paragraph = idx
+                        #     current_question_data['solution_text'].append(text)
+                        #     self.log(f"   📕 KẾT THÚC LỜI GIẢI tại para {idx}")
+                        #     in_solution = False
+                        #     in_question = False # Kết thúc câu
+                        #     continue
+                        
+                        # === END FIX (P4) ===
+                        
+                        # --- Thu thập content (nếu text có nội dung) ---
                         if text:
                             para_images = self.extract_paragraph_images(para)
                             para_equations = self.extract_paragraph_equations(para)
                             
                             if in_solution:
                                 current_question_data['solution_text'].append(text)
-                                solution_end_paragraph = idx  # Cập nhật liên tục
+                                solution_end_paragraph = idx # LUÔN CẬP NHẬT
                                 self._add_images_to_section(current_question_data, para_images, 'solution')
                                 current_question_data['solution_equations'].extend(para_equations)
                             else:
@@ -558,53 +688,83 @@ class EnhancedDocxParser:
                                 self._add_images_to_section(current_question_data, para_images, 'question')
                                 current_question_data['question_equations'].extend(para_equations)
                                 
-                                # =================== FIX #2 (ĐÃ THÊM) ===================
-                                # Cập nhật loại câu hỏi nếu phát hiện fill-blank hoặc true-false ở dòng sau
+                                # Cập nhật loại câu hỏi
                                 detected_type = self._detect_question_type(text)
+                                current_type = current_question_data['question_type']
+                                
+                                # Tín hiệu mạnh nhất (MC, FB) luôn ghi đè
+                                strongest_signals = [self.QUESTION_TYPE_MULTIPLE_CHOICE, 
+                                                     self.QUESTION_TYPE_FILL_BLANK]
 
-                                if (current_question_data['question_type'] == self.QUESTION_TYPE_UNKNOWN):
-                                    if detected_type == self.QUESTION_TYPE_FILL_BLANK:
-                                        current_question_data['question_type'] = self.QUESTION_TYPE_FILL_BLANK
-                                        self.log(f"   ✓ Cập nhật loại câu hỏi -> FILL_BLANK tại para {idx}")
-                                    elif detected_type == self.QUESTION_TYPE_TRUE_FALSE:
-                                        current_question_data['question_type'] = self.QUESTION_TYPE_TRUE_FALSE
-                                        self.log(f"   ✓ Cập nhật loại câu hỏi -> TRUE_FALSE tại para {idx}")
-                                    elif detected_type == self.QUESTION_TYPE_MULTIPLE_CHOICE:
-                                        current_question_data['question_type'] = self.QUESTION_TYPE_MULTIPLE_CHOICE
-                                        self.log(f"   ✓ Cập nhật loại câu hỏi -> MULTIPLE_CHOICE tại para {idx}")
-                                # ================= END FIX #2 =================
+                                if detected_type in strongest_signals:
+                                    if current_type != detected_type:
+                                        self.log(f"   ✓ Cập nhật loại (Tín hiệu mạnh) -> {detected_type}")
+                                        current_question_data['question_type'] = detected_type
+                                
+                                # Xử lý tín hiệu ESSAY
+                                elif detected_type == self.QUESTION_TYPE_ESSAY:
+                                    if current_type == self.QUESTION_TYPE_UNKNOWN:
+                                        self.log(f"   ✓ Cập nhật loại (Tín hiệu Essay) -> {detected_type}")
+                                        current_question_data['question_type'] = detected_type
+                                
+                                # Xử lý tín hiệu TRUE_FALSE
+                                elif detected_type == self.QUESTION_TYPE_TRUE_FALSE:
+                                    # Chỉ cập nhật nếu loại hiện tại là UNKNOWN
+                                    # (KHÔNG ghi đè lên ESSAY, vì a) b) có thể là 1 phần của câu tự luận)
+                                    if current_type == self.QUESTION_TYPE_UNKNOWN:
+                                        self.log(f"   ✓ Cập nhật loại (Tín hiệu TF) -> {detected_type}")
+                                        current_question_data['question_type'] = detected_type
                         
-                        # Giới hạn an toàn
+                        # --- Giới hạn an toàn ---
                         if paragraphs_after_question > 50:
-                            self.log(f"   ⚠️ Quá 50 paragraphs, dừng câu {current_question_num}")
+                            self.log(f"   ⚠️ Quá 50 paragraphs, dừng câu {current_question_id}")
                             in_question = False
                             in_solution = False
-                
+                        
+                        continue # Đã xử lý (hoặc bỏ qua), đọc paragraph tiếp theo
+
+                    # ===============================================
+                    # ƯU TIÊN 4: THÊM VÀO CONTEXT (NẾU KHÔNG PHẢI 3 ƯU TIÊN TRÊN)
+                    # ===============================================
+                    # (Đang ở ngoài câu hỏi, và có 1 context đang active)
+                    if not in_question and current_context and text:
+                         # Bỏ qua các marker [VD] hoặc dòng trống
+                        if not text.startswith('[') and not text.startswith('='):
+                            current_context.append(text)
+                            self.log(f"   [Context] Thêm vào Context -> {text[:50]}...")
+                            continue # Đọc paragraph tiếp theo
+                    
+                    # (Tất cả các dòng rác khác sẽ bị bỏ qua ở đây)
+
                 except Exception as e:
                     self.log(f"✗ Lỗi xử lý paragraph {idx}: {str(e)}")
                     self.log(traceback.format_exc())
                     continue
             
-            # Lưu câu cuối
-            if current_question_num is not None:
+            # --- Lưu câu cuối cùng ---
+            if current_question_id is not None:
                 if solution_end_paragraph is not None:
                     current_question_data['end_paragraph'] = solution_end_paragraph
                 else:
-                    # Nếu câu cuối không có lời giải, para cuối là para cuối của doc
-                    if not current_question_data['solution_text']:
-                         current_question_data['end_paragraph'] = len(self.doc.paragraphs) - 1
-                    # Nếu có lời giải nhưng không có end_marker, nó cũng là para cuối
-                    else:
-                         current_question_data['end_paragraph'] = len(self.doc.paragraphs) - 1
-
+                    current_question_data['end_paragraph'] = len(self.doc.paragraphs) - 1
                 
-                questions[current_question_num] = current_question_data
-                self.log(f"✅ Lưu Câu {current_question_num} (cuối) "
+                questions[current_question_id] = current_question_data
+                self.log(f"✅ Lưu Câu {current_question_id} (cuối) "
                         f"[{current_question_data['start_paragraph']} -> {current_question_data['end_paragraph']}] "
                         f"(Loại: {current_question_data['question_type']})")
             
             self.log("\n" + "="*70)
             self.log(f"KẾT QUẢ: {len(questions)} câu hỏi")
+            
+            # Thống kê loại câu
+            type_counts = defaultdict(int)
+            for q in questions.values():
+                type_counts[q['question_type']] += 1
+            
+            self.log("THỐNG KÊ LOẠI CÂU:")
+            for qtype, count in type_counts.items():
+                self.log(f"  - {qtype}: {count} câu")
+            
             self.log("="*70)
             
         except Exception as e:
@@ -616,6 +776,7 @@ class EnhancedDocxParser:
     def _init_question_data(self) -> Dict:
         """Khởi tạo cấu trúc dữ liệu câu hỏi"""
         return {
+            'question_id': '',  # MỚI: ID câu hỏi (có thể là "1.a")
             'question_text': [],
             'question_images': [],
             'question_images_formula': [],
@@ -683,5 +844,254 @@ class EnhancedDocxParser:
                 'other_images': 0,
                 'file_path': self.docx_path,
                 'error': str(e)
-            }           
+            }
 
+    def detect_question_dependencies(self, questions: Dict) -> Dict:
+        """
+        Phát hiện quan hệ phụ thuộc giữa các câu - THÔNG MINH
+        
+        Quy tắc:
+        - Câu phụ (1.a, 2.b) LUÔN phụ thuộc câu trước
+        - Câu tự luận (essay) LUÔN phụ thuộc câu trước (trừ câu đầu)
+        - Câu trắc nghiệm KHÔNG phụ thuộc
+        
+        Returns:
+            Dict[qid] = {
+                'depends_on': list,  # Danh sách câu phụ thuộc
+                'context_questions': list,  # Câu cần gửi context cho AI
+            }
+        """
+        dependencies = {}
+        sorted_qids = self._sort_question_ids_for_dependency(list(questions.keys()))
+        
+        for idx, qid in enumerate(sorted_qids):
+            q_data = questions[qid]
+            q_type = q_data.get('question_type', self.QUESTION_TYPE_UNKNOWN)
+            
+            dependencies[qid] = {
+                'depends_on': [],
+                'context_questions': []
+            }
+            
+            # === QUY TẮC 1: Câu phụ (1.a, 2.b, ...) ===
+            match = re.match(r'^(\d+)\.([a-z])$', qid)
+            if match:
+                parent_num = match.group(1)
+                sub_letter = match.group(2)
+                
+                # Tìm tất cả câu phụ trước đó của cùng câu cha
+                for prev_qid in sorted_qids[:idx]:
+                    prev_match = re.match(r'^(\d+)\.([a-z])$', prev_qid)
+                    if prev_match and prev_match.group(1) == parent_num:
+                        prev_letter = prev_match.group(2)
+                        if prev_letter < sub_letter:
+                            dependencies[qid]['depends_on'].append(prev_qid)
+                            dependencies[qid]['context_questions'].append(prev_qid)
+                
+                # Thêm câu cha (nếu tồn tại)
+                if parent_num in questions:
+                    dependencies[qid]['depends_on'].append(parent_num)
+                    dependencies[qid]['context_questions'].append(parent_num)
+            
+            # === QUY TẮC 2: Câu tự luận (1, 2, 3, ...) ===
+            elif q_type == self.QUESTION_TYPE_ESSAY:
+                # Tìm câu trước đó (cùng nhóm)
+                if idx > 0:
+                    prev_qid = sorted_qids[idx - 1]
+                    prev_q_data = questions[prev_qid]
+                    prev_type = prev_q_data.get('question_type', self.QUESTION_TYPE_UNKNOWN)
+                    
+                    # Chỉ phụ thuộc nếu câu trước cũng là tự luận
+                    if prev_type == self.QUESTION_TYPE_ESSAY:
+                        dependencies[qid]['depends_on'].append(prev_qid)
+                        dependencies[qid]['context_questions'].append(prev_qid)
+            
+            # === QUY TẮC 3: Trắc nghiệm → Không phụ thuộc ===
+            # (Đã mặc định rỗng ở trên)
+        
+        return dependencies
+
+    def build_context_for_question(self, questions: Dict, current_qid: str) -> str:
+        """
+        Xây dựng context CHỈ cho câu CÙNG HỌC LIỆU
+        
+        Logic:
+        - Chỉ áp dụng cho Tự luận
+        - Phát hiện học liệu của câu hiện tại (từ question_text)
+        - Chỉ lấy các câu CÙNG học liệu đó
+        
+        Returns:
+            str: Context text (hoặc rỗng nếu không cần)
+        """
+        current_q = questions.get(current_qid)
+        if not current_q:
+            return ""
+        
+        # Chỉ xử lý tự luận
+        q_type = current_q.get('question_type', self.QUESTION_TYPE_UNKNOWN)
+        if q_type != self.QUESTION_TYPE_ESSAY:
+            return ""
+        
+        # === BƯỚC 1: Xác định học liệu của câu hiện tại ===
+        current_hoc_lieu = self._extract_hoc_lieu_from_question(current_q)
+        
+        if not current_hoc_lieu:
+            # Không có học liệu → không cần context
+            return ""
+        
+        # Sắp xếp câu theo thứ tự
+        sorted_qids = self._sort_question_ids_for_dependency(list(questions.keys()))
+        
+        # Tìm vị trí câu hiện tại
+        try:
+            current_idx = sorted_qids.index(current_qid)
+        except ValueError:
+            return ""
+        
+        # Nếu là câu đầu tiên trong học liệu → Không có context
+        if current_idx == 0:
+            return ""
+        
+        # === BƯỚC 2: Lấy CÁC CÂU TRƯỚC CÙNG HỌC LIỆU ===
+        context_qids = []
+        
+        for prev_qid in sorted_qids[:current_idx]:
+            prev_q = questions[prev_qid]
+            prev_type = prev_q.get('question_type', self.QUESTION_TYPE_UNKNOWN)
+            
+            # Chỉ lấy câu tự luận
+            if prev_type != self.QUESTION_TYPE_ESSAY:
+                continue
+            
+            # Kiểm tra cùng học liệu
+            prev_hoc_lieu = self._extract_hoc_lieu_from_question(prev_q)
+            
+            if prev_hoc_lieu == current_hoc_lieu:
+                context_qids.append(prev_qid)
+        
+        # === BƯỚC 3: Xây dựng context text ===
+        if not context_qids:
+            return ""
+        
+        context_text = "\n\n" + "="*70
+        context_text += f"\nCONTEXT - CÁC CÂU TRƯỚC ({current_hoc_lieu})"
+        context_text += "\n" + "="*70
+        context_text += "\n[LƯU Ý]: Câu hiện tại CÓ THỂ phụ thuộc hoặc ĐỘC LẬP với các câu dưới đây."
+        context_text += f"\n[QUAN TRỌNG]: Tất cả câu dưới đây đều thuộc {current_hoc_lieu}."
+        context_text += "\n" + "="*70 + "\n"
+        
+        for ctx_qid in context_qids:
+            ctx_q = questions[ctx_qid]
+            
+            context_text += f"\n### Câu {ctx_qid}:\n"
+            
+            # Thêm đề bài (BỎ QUA dòng "Học liệu X" / "Phần X")
+            if ctx_q.get('question_text'):
+                question_lines = ctx_q.get('question_text', [])
+                filtered_lines = []
+                for line in question_lines:
+                    # === START FIX (P3) ===
+                    line_lower = line.lower().strip()
+                    if not (line_lower.startswith('học liệu') or 
+                            line_lower.startswith('chủ đề') or 
+                            re.match(r'^\s*phần\s+[ivx\d]+\b', line_lower)):
+                        filtered_lines.append(line)
+                    # === END FIX (P3) ===
+                
+                context_text += "\n".join(filtered_lines)
+            
+            # Thêm lời giải
+            if ctx_q.get('solution_text'):
+                context_text += f"\n\n[Lời giải Câu {ctx_qid}]:\n"
+                solution_lines = ctx_q.get('solution_text', [])
+                
+                cleaned_solution = []
+                for line in solution_lines:
+                    line_stripped = line.strip()
+                    if line_stripped and \
+                    not line_stripped.lower().startswith('lời giải') and \
+                    not all(c in '=-*#' for c in line_stripped):
+                        cleaned_solution.append(line)
+                
+                context_text += "\n".join(cleaned_solution)
+            else:
+                context_text += "\n\n[Câu này KHÔNG CÓ lời giải]"
+            
+            # Thông tin ảnh
+            if ctx_q.get('question_images') or ctx_q.get('solution_images'):
+                img_count = len(ctx_q.get('question_images', [])) + len(ctx_q.get('solution_images', []))
+                context_text += f"\n[Câu này có {img_count} hình ảnh]"
+            
+            context_text += "\n" + "─"*70 + "\n"
+        
+        return context_text
+
+
+    def _get_question_group(self, qid: str) -> str:
+        """
+        Lấy nhóm của câu hỏi
+        
+        Ví dụ:
+        - "1" → "1"
+        - "1.a" → "1"
+        - "2.b" → "2"
+        """
+        match = re.match(r'^(\d+)', qid)
+        if match:
+            return match.group(1)
+        return qid
+
+    def _sort_question_ids_for_dependency(self, question_ids: list) -> list:
+        """Sắp xếp câu hỏi (1, 1.a, 1.b, 2, 2.a, ...)"""
+        def parse_id(qid):
+            match = re.match(r'^(\d+)(?:\.([a-z]))?$', str(qid))
+            if match:
+                main_num = int(match.group(1))
+                sub_letter = match.group(2) if match.group(2) else ''
+                return (main_num, sub_letter)
+            try:
+                return (int(qid), '')
+            except:
+                return (999999, str(qid))
+        
+        return sorted(question_ids, key=parse_id)
+    def _extract_hoc_lieu_from_question(self, question_data: Dict) -> str:
+        """
+        Trích xuất tên học liệu từ question_text
+        
+        VD: 
+        - "Học liệu 1. Người ta dùng..." → "Học liệu 1"
+        - "Học liệu 2. Cho tam giác..." → "Học liệu 2"
+        - "Chủ đề A. ..." → "Chủ đề A"
+        - "PHẦN I. TRẮC NGHIỆM" -> "Phần I"
+        
+        Returns:
+            str: Tên học liệu (hoặc rỗng nếu không tìm thấy)
+        """
+        question_text = question_data.get('question_text', [])
+        
+        if not question_text:
+            return ""
+        
+        # Kiểm tra dòng đầu tiên
+        first_line = question_text[0].strip().lower()
+        
+        # Pattern: "Học liệu 1", "Chủ đề A", "Phần I"
+        import re
+        # === START FIX (P3) ===
+        match = re.match(r'^(học liệu \d+|chủ đề [a-z0-9]+|phần\s+[ivx\d]+)', first_line, re.IGNORECASE)
+        # === END FIX (P3) ===
+        
+        if match:
+            return match.group(1).title()  # "Học Liệu 1", "Chủ Đề A", "Phần I"
+        
+        # Kiểm tra các dòng tiếp theo (phòng trường hợp dòng đầu là số câu)
+        for line in question_text[:3]:  # Chỉ check 3 dòng đầu
+            line_stripped = line.strip().lower()
+            # === START FIX (P3) ===
+            match = re.match(r'^(học liệu \d+|chủ đề [a-z0-9]+|phần\s+[ivx\d]+)', line_stripped, re.IGNORECASE)
+            # === END FIX (P3) ===
+            if match:
+                return match.group(1).title()
+        
+        return ""

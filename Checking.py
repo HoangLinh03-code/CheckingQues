@@ -8,6 +8,51 @@ CheckDe_V2.py - IMPROVED: Đọc hình ảnh, công thức toán, XML structure
 """
 import sys
 import os
+import pytesseract
+def setup_tesseract():
+    """
+    Hàm này sẽ tìm và thiết lập đường dẫn cho Tesseract,
+    cho dù chạy từ code (local dev) hay từ file .exe (PyInstaller build).
+    """
+    if getattr(sys, 'frozen', False):
+        # --- Chạy từ file .exe (đã build) ---
+        
+        # 1. Lấy đường dẫn cơ sở của file .exe đang chạy
+        # sys._MEIPASS là thư mục tạm mà PyInstaller giải nén
+        base_path = sys._MEIPASS
+        
+        # 2. Xây dựng đường dẫn đến tesseract.exe
+        # (Dựa trên cấu hình PyInstaller: --add-data "...;Tesseract-OCR")
+        tesseract_path = os.path.join(base_path, 'Tesseract-OCR', 'tesseract.exe')
+        
+        # 3. Xây dựng đường dẫn đến thư mục tessdata (chứa file ngôn ngữ)
+        tessdata_dir = os.path.join(base_path, 'Tesseract-OCR', 'tessdata')
+
+        # 4. Chỉ định đường dẫn cho pytesseract
+        pytesseract.tesseract_cmd = tesseract_path
+        
+        # 5. (Rất quan trọng) Chỉ định biến môi trường TESSDATA_PREFIX
+        # để Tesseract biết tìm file ngôn ngữ ở đâu.
+        os.environ['TESSDATA_PREFIX'] = tessdata_dir
+        
+        print(f"[INFO] Running from EXE. Tesseract path: {tesseract_path}")
+        print(f"[INFO] TESSDATA_PREFIX set to: {tessdata_dir}")
+
+    else:
+        # --- Chạy từ code (local dev) ---
+        # Giả sử tesseract đã có trong PATH của hệ thống
+        print("[INFO] Running from source. Assuming 'tesseract' is in PATH.")
+        # Bạn không cần làm gì cả, pytesseract sẽ tự tìm trong PATH
+
+# --- GỌI HÀM NÀY NGAY LẬP TỨC KHI CHƯƠNG TRÌNH BẮT ĐẦU ---
+try:
+    setup_tesseract()
+    # (Tùy chọn) Kiểm tra nhanh phiên bản để xác nhận
+    version = pytesseract.get_tesseract_version()
+    print(f"[INFO] Tesseract version: {version}")
+except Exception as e:
+    print(f"[ERROR] Không thể cài đặt hoặc tìm thấy Tesseract: {e}")
+
 import glob
 import PyQt5
 import PyQt5.QtCore

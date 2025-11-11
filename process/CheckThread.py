@@ -7,10 +7,11 @@ from process.EnhancedDocx import EnhancedDocxParser
 import time
 from process.DocxWriter import DocxWriter
 import traceback
+import re
 
-# ==================== PROCESSING THREAD V2 ====================
+
 class CheckThread(QThread):
-    """Thread xử lý với Enhanced Parser"""
+    """Thread xử lý với hỗ trợ câu phụ (1.a, 2.b, ...)"""
     
     progress = pyqtSignal(str)
     finished_signal = pyqtSignal(list)
@@ -27,6 +28,29 @@ class CheckThread(QThread):
     
     def stop(self):
         self.stop_requested = True
+    
+    @staticmethod
+    def _sort_question_ids(question_ids: list) -> list:
+        """
+        Sắp xếp danh sách ID câu hỏi (hỗ trợ câu phụ)
+        
+        Ví dụ: ["1", "1.a", "1.b", "2", "2.a", "10"]
+        -> ["1", "1.a", "1.b", "2", "2.a", "10"]
+        """
+        def parse_id(qid):
+            """Parse ID thành (số chính, chữ phụ)"""
+            match = re.match(r'^(\d+)(?:\.([a-z]))?$', str(qid))
+            if match:
+                main_num = int(match.group(1))
+                sub_letter = match.group(2) if match.group(2) else ''
+                return (main_num, sub_letter)
+            # Fallback
+            try:
+                return (int(qid), '')
+            except:
+                return (999999, str(qid))
+        
+        return sorted(question_ids, key=parse_id)
     
     def run(self):
         try:
@@ -60,32 +84,68 @@ class CheckThread(QThread):
                     self.progress.emit("📖 Đang đọc file (bao gồm ảnh & công thức)...")
                     parser = EnhancedDocxParser(docx_path)
                     questions = parser.parse_questions_with_numbering()
+                    dependencies = parser.detect_question_dependencies(questions)
                     
                     self.progress.emit(f"✔️ Tìm thấy {len(questions)} câu hỏi")
                     stats = parser.get_statistics()
                     self.progress.emit(f"   📷 {stats['total_images']} hình ảnh")
-                    self.progress.emit(f"   📐 Ảnh công thức: {stats['formula_images']}, Ảnh minh họa: {stats['illustration_images']}")
+                    self.progress.emit(f"   🔢 Ảnh công thức: {stats['formula_images']}, Ảnh minh họa: {stats['illustration_images']}")
                     
                     questions_with_solution = sum(1 for q in questions.values() if len(q.get('solution_text', [])) > 0)
                     self.progress.emit(f"   💡 {questions_with_solution}/{len(questions)} câu có lời giải\n")
+                    
+                    # Hiển thị danh sách câu hỏi
+                    sorted_qids = self._sort_question_ids(list(questions.keys()))
+                    self.progress.emit(f"   📝 Danh sách: {', '.join(sorted_qids)}\n")
                     
                     # Check từng câu
                     questions_results = {}
                     correct_count = 0
                     
-                    for qnum in sorted(questions.keys()):
+                    dep_count = sum(1 for d in dependencies.values() if d['depends_on'])
+                    if dep_count > 0:
+                        self.progress.emit(f"   🔗 {dep_count} câu có phụ thuộc")
+                    
+                    # Check từng câu
+                    questions_results = {}
+                    correct_count = 0
+                    
+                    for qid in sorted_qids:
                         if self.stop_requested:
                             break
                         
-                        self.progress.emit(f"🔍 Đang check Câu {qnum}...")
+                        self.progress.emit(f"🔍 Đang check Câu {qid}...")
                         
+                        # === XÂY DỰNG CONTEXT (chỉ cho tự luận) ===
+                        context = parser.build_context_for_question(questions, qid)
+                        
+                        # === LOG RÕ RÀNG VỀ CONTEXT ===
+                        q_type = questions[qid].get('question_type', 'unknown')
+                        
+                        if context:
+                            # Đếm số câu trong context
+                            context_qids = [line.split('Câu ')[1].split(':')[0] 
+                                        for line in context.split('\n') 
+                                        if line.strip().startswith('### Câu')]
+                            
+                            self.progress.emit(f"   📚 Context: {len(context_qids)} câu trước ({', '.join(context_qids)})")
+                            self.progress.emit(f"   ⚠️  AI sẽ phân tích xem Câu {qid} có phụ thuộc hay không")
+                        else:
+                            if q_type == parser.QUESTION_TYPE_ESSAY:
+                                self.progress.emit(f"   📝 Tự luận - Câu đầu tiên (không có context)")
+                            else:
+                                self.progress.emit(f"   ✅ {q_type} - Không cần context")
+                        
+                        # === GỌI AI CHECK ===
                         result = checker.check_question(
-                            questions[qnum],
-                            prompt_content
+                            questions[qid],
+                            prompt_content,
+                            context_text=context
                         )
                         
-                        questions_results[qnum] = result
+                        questions_results[qid] = result
                         
+                        # === LOG KẾT QUẢ ===
                         if result['is_correct']:
                             status = "✅ CHÍNH XÁC"
                             correct_count += 1
@@ -94,8 +154,19 @@ class CheckThread(QThread):
                         
                         self.progress.emit(f"   ➜ {status}")
                         
+                        # Hiển thị phần phân tích quan hệ (nếu có)
+                        if not result['is_correct'] and '[Phân tích quan hệ]:' in result['evaluation']:
+                            # Trích xuất dòng phân tích quan hệ
+                            eval_lines = result['evaluation'].split('\n')
+                            for line in eval_lines:
+                                if '[Phân tích quan hệ]:' in line or '[Kiểm tra câu trước]:' in line:
+                                    self.progress.emit(f"   📌 {line.strip()}")
+                                    break
+                        
                         if not result['is_correct']:
-                            eval_short = result['evaluation'][:80] + "..."
+                            eval_short = result['evaluation'][:100]
+                            if len(result['evaluation']) > 100:
+                                eval_short += "..."
                             self.progress.emit(f"   📌 {eval_short}")
                         
                         time.sleep(0.5)
