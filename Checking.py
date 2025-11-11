@@ -9,49 +9,68 @@ CheckDe_V2.py - IMPROVED: Đọc hình ảnh, công thức toán, XML structure
 import sys
 import os
 import pytesseract
+
 def setup_tesseract():
     """
-    Hàm này sẽ tìm và thiết lập đường dẫn cho Tesseract,
-    cho dù chạy từ code (local dev) hay từ file .exe (PyInstaller build).
+    Tìm và thiết lập đường dẫn cho Tesseract, kể cả khi chạy từ .exe (PyInstaller).
+    Hàm này phải được gọi trước bất kỳ lệnh pytesseract nào khác.
     """
-    if getattr(sys, 'frozen', False):
-        # --- Chạy từ file .exe (đã build) ---
-        
-        # 1. Lấy đường dẫn cơ sở của file .exe đang chạy
-        # sys._MEIPASS là thư mục tạm mà PyInstaller giải nén
-        base_path = sys._MEIPASS
-        
-        # 2. Xây dựng đường dẫn đến tesseract.exe
-        # (Dựa trên cấu hình PyInstaller: --add-data "...;Tesseract-OCR")
-        tesseract_path = os.path.join(base_path, 'Tesseract-OCR', 'tesseract.exe')
-        
-        # 3. Xây dựng đường dẫn đến thư mục tessdata (chứa file ngôn ngữ)
-        tessdata_dir = os.path.join(base_path, 'Tesseract-OCR', 'tessdata')
+    try:
+        if getattr(sys, 'frozen', False):
+            # --- Chạy từ file .exe (đã build) ---
+            print("[INFO] Đang chạy từ file .exe, thiết lập Tesseract...")
+            
+            # 1. Lấy đường dẫn thư mục tạm _MEIPASS
+            base_path = sys._MEIPASS
+            
+            # 2. Xây dựng đường dẫn đến thư mục Tesseract-OCR
+            # (Dựa trên --add-data "...;Tesseract-OCR")
+            tesseract_dir = os.path.join(base_path, 'Tesseract-OCR')
+            
+            # 3. Xây dựng đường dẫn đến file tesseract.exe
+            tesseract_path = os.path.join(tesseract_dir, 'tesseract.exe')
+            
+            # 4. Xây dựng đường dẫn đến thư mục tessdata
+            tessdata_dir = os.path.join(tesseract_dir, 'tessdata')
 
-        # 4. Chỉ định đường dẫn cho pytesseract
-        pytesseract.tesseract_cmd = tesseract_path
-        
-        # 5. (Rất quan trọng) Chỉ định biến môi trường TESSDATA_PREFIX
-        # để Tesseract biết tìm file ngôn ngữ ở đâu.
-        os.environ['TESSDATA_PREFIX'] = tessdata_dir
-        
-        print(f"[INFO] Running from EXE. Tesseract path: {tesseract_path}")
-        print(f"[INFO] TESSDATA_PREFIX set to: {tessdata_dir}")
+            # 5. [QUAN TRỌNG] Thêm thư mục Tesseract vào PATH môi trường
+            # Điều này giúp tesseract.exe tìm thấy các file .dll của nó (như leptonica)
+            os.environ['PATH'] = tesseract_dir + os.pathsep + os.environ.get('PATH', '')
+            
+            # 6. Chỉ định đường dẫn cho pytesseract
+            pytesseract.tesseract_cmd = tesseract_path
+            
+            # 7. Chỉ định biến môi trường TESSDATA_PREFIX
+            os.environ['TESSDATA_PREFIX'] = tessdata_dir
+            
+            print(f"[INFO] Đã thêm vào PATH: {tesseract_dir}")
+            print(f"[INFO] Tesseract CMD: {tesseract_path}")
+            print(f"[INFO] TESSDATA_PREFIX: {tessdata_dir}")
 
-    else:
-        # --- Chạy từ code (local dev) ---
-        # Giả sử tesseract đã có trong PATH của hệ thống
-        print("[INFO] Running from source. Assuming 'tesseract' is in PATH.")
-        # Bạn không cần làm gì cả, pytesseract sẽ tự tìm trong PATH
+        else:
+            # --- Chạy từ code (local dev) ---
+            print("[INFO] Đang chạy từ source code, giả sử Tesseract đã có trong PATH.")
+            # Không cần làm gì, pytesseract sẽ tự tìm
+        
+        # --- Kiểm tra ---
+        # Thử gọi hàm get_tesseract_version() để xác nhận
+        version = pytesseract.get_tesseract_version()
+        print(f"[INFO] Tesseract OK! Phiên bản: {version}")
+
+    except Exception as e:
+        print(f"[ERROR] Không thể cài đặt hoặc tìm thấy Tesseract: {e}")
+        # Xử lý lỗi (ví dụ: hiển thị popup cho người dùng)
+        # raise e # Hoặc "raise" để dừng chương trình nếu Tesseract là bắt buộc
 
 # --- GỌI HÀM NÀY NGAY LẬP TỨC KHI CHƯƠNG TRÌNH BẮT ĐẦU ---
 try:
     setup_tesseract()
     # (Tùy chọn) Kiểm tra nhanh phiên bản để xác nhận
-    version = pytesseract.get_tesseract_version()
-    print(f"[INFO] Tesseract version: {version}")
+    # version = pytesseract.get_tesseract_version() # Đã chuyển vào trong hàm
+    # print(f"[INFO] Tesseract version: {version}") # Đã chuyển vào trong hàm
 except Exception as e:
-    print(f"[ERROR] Không thể cài đặt hoặc tìm thấy Tesseract: {e}")
+    # print(f"[ERROR] Không thể cài đặt hoặc tìm thấy Tesseract: {e}") # Đã chuyển vào trong hàm
+    pass
 
 import glob
 import PyQt5
