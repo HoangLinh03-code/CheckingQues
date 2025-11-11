@@ -11,53 +11,53 @@ import pytesseract
 import platform
 import os
 
-# ============== CẤU HÌNH TESSERACT (THÊM ĐOẠN NÀY) ==============
-def configure_tesseract():
-    """Tự động cấu hình Tesseract path"""
-    system = platform.system()
+# # ============== CẤU HÌNH TESSERACT (THÊM ĐOẠN NÀY) ==============
+# def configure_tesseract():
+#     """Tự động cấu hình Tesseract path"""
+#     system = platform.system()
     
-    if system == 'Windows':
-        # Các đường dẫn thường gặp trên Windows
-        possible_paths = [
-            r'C:\\Program Files\\Tesseract-OCR\\tesseract.exe',
-            r'C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe',
-            r'C:\\Tesseract-OCR\\tesseract.exe',
-            os.path.expanduser(r'~\AppData\\Local\\Programs\\Tesseract-OCR\\tesseract.exe'),
-        ]
+#     if system == 'Windows':
+#         # Các đường dẫn thường gặp trên Windows
+#         possible_paths = [
+#             r'C:\\Program Files\\Tesseract-OCR\\tesseract.exe',
+#             r'C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe',
+#             r'C:\\Tesseract-OCR\\tesseract.exe',
+#             os.path.expanduser(r'~\AppData\\Local\\Programs\\Tesseract-OCR\\tesseract.exe'),
+#         ]
         
-        for path in possible_paths:
-            if os.path.exists(path):
-                pytesseract.pytesseract.tesseract_cmd = path
-                print(f"[Tesseract] ✓ Đã cấu hình: {path}")
-                return True
+#         for path in possible_paths:
+#             if os.path.exists(path):
+#                 pytesseract.pytesseract.tesseract_cmd = path
+#                 print(f"[Tesseract] ✓ Đã cấu hình: {path}")
+#                 return True
         
-        print("[Tesseract] ✗ KHÔNG tìm thấy Tesseract!")
-        print("[Tesseract] Vui lòng cài đặt từ: https://github.com/UB-Mannheim/tesseract/wiki")
-        return False
+#         print("[Tesseract] ✗ KHÔNG tìm thấy Tesseract!")
+#         print("[Tesseract] Vui lòng cài đặt từ: https://github.com/UB-Mannheim/tesseract/wiki")
+#         return False
     
-    elif system == 'Darwin':  # macOS
-        # Homebrew thường cài tại /usr/local/bin hoặc /opt/homebrew/bin
-        possible_paths = [
-            '/usr/local/bin/tesseract',
-            '/opt/homebrew/bin/tesseract',
-        ]
+#     elif system == 'Darwin':  # macOS
+#         # Homebrew thường cài tại /usr/local/bin hoặc /opt/homebrew/bin
+#         possible_paths = [
+#             '/usr/local/bin/tesseract',
+#             '/opt/homebrew/bin/tesseract',
+#         ]
         
-        for path in possible_paths:
-            if os.path.exists(path):
-                pytesseract.pytesseract.tesseract_cmd = path
-                print(f"[Tesseract] ✓ Đã cấu hình: {path}")
-                return True
+#         for path in possible_paths:
+#             if os.path.exists(path):
+#                 pytesseract.pytesseract.tesseract_cmd = path
+#                 print(f"[Tesseract] ✓ Đã cấu hình: {path}")
+#                 return True
     
-    elif system == 'Linux':
-        # Linux thường có sẵn trong PATH
-        # Không cần cấu hình gì thêm
-        print(f"[Tesseract] Linux - sử dụng PATH mặc định")
-        return True
+#     elif system == 'Linux':
+#         # Linux thường có sẵn trong PATH
+#         # Không cần cấu hình gì thêm
+#         print(f"[Tesseract] Linux - sử dụng PATH mặc định")
+#         return True
     
-    return True
+#     return True
 
-# Chạy cấu hình khi import module
-configure_tesseract()
+# # Chạy cấu hình khi import module
+# configure_tesseract()
 class AIQuestionChecker:
     """
     AI Checker với prompt tối ưu và KNOWLEDGE mở rộng (7-10 dòng)

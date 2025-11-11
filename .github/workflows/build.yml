@@ -58,9 +58,6 @@ jobs:
         run: |
           uv run python -c "import PyQt5; print('PyQt5 version:', PyQt5.Qt.PYQT_VERSION_STR)"
           uv run python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 imported successfully')"
-      - name: Install pytessaeract
-        run: |
-          uv pip install pytesseract
       # Tạo file .env từ secret
       - name: Create .env file from ENV_KEY secret
         shell: pwsh
