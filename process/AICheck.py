@@ -1,7 +1,8 @@
-from typing import Dict
+import traceback
+from typing import Dict, List
 from api.callApi import VertexClient
 import re
-
+import json
 # ==================== AI CHECKER V5 (OPTIMIZED PROMPT) ====================
 class AIQuestionChecker:
     """
@@ -10,6 +11,8 @@ class AIQuestionChecker:
     
     def __init__(self, project_id: str, creds, model_name: str = "gemini-2.5-pro"):
         self.client = VertexClient(project_id, creds, model_name)
+
+    
     
     def check_question(self, question_data: Dict, prompt_content: str) -> Dict:
         """
@@ -273,3 +276,250 @@ BẮT ĐẦU ĐÁNH GIÁ:"""
                         result[current_section] = line
         
         return result
+    
+# class AIQuestionExcelChecker:
+#     """
+#     AI Checker chuyên dụng cho ExcelCheckThread.
+#     Nhận dữ liệu từng dòng Excel, gọi AI và trả về dictionary phù hợp với cột trong Excel.
+#     """
+    
+#     def __init__(self, project_id: str, creds, model_name: str = "gemini-2.5-pro"):
+#         self.client = VertexClient(project_id, creds, model_name)
+
+#     def check_question(self, question_data: Dict, prompt_content: str) -> Dict:
+#         """
+#         Kiểm tra câu hỏi từ Excel.
+        
+#         Args:
+#             question_data: {
+#                 "question_text": List[str],
+#                 "question_images": List,
+#                 "solution_text": List[str],
+#                 "question_equations": List,
+#                 "solution_equations": List,
+#                 "materials": str,
+#                 "options": str,
+#                 "extras": List[str]
+#             }
+#             prompt_content: text prompt gốc từ file prompt.txt
+            
+#         Returns:
+#             Dict với 3 trường: evaluation, suggestions, knowledge
+#         """
+#         # --- 1. Chuẩn bị text cho AI ---
+#         q_text = "\n".join(question_data.get("question_text", []))
+#         materials = question_data.get("materials", "")
+#         options = question_data.get("options", "")
+#         extras = question_data.get("extras", [])
+
+#         full_context = [prompt_content, f"Đề bài: {q_text}"]
+#         if materials:
+#             full_context.append(f"Học liệu / Nội dung tham khảo: {materials}")
+#         if options:
+#             full_context.append(f"Phương án / Đáp án: {options}")
+#         if extras:
+#             full_context.append("Thông tin khác:\n" + "\n".join(extras))
+        
+#         # full_context.append(
+#         #     "\nYêu cầu: Trả về JSON với 3 trường: evaluation, suggestions, knowledge"
+#         # )
+#         full_context.append(
+#     "\nYêu cầu: Trả về theo đúng định dạng text dưới đây, không thêm ký hiệu hay markdown:\n"
+#     "EVALUATION:\n[một câu]\n\n"
+#     "SUGGESTIONS:\n[2-4 dòng, mỗi dòng bắt đầu bằng '-']\n\n"
+#     "KNOWLEDGE:\n[5-7 câu kiến thức, mỗi câu một dòng]\n"
+# )
+#         final_prompt = "\n\n".join(full_context)
+
+#         # --- 2. Gọi AI ---
+#         try:
+#             response = self.client.send_data_to_check(prompt=final_prompt, temperature=0.2)
+#             return self.parse_ai_response(response)
+#         except Exception as e:
+#             return {
+#                 "evaluation": f"Lỗi AI: {str(e)}",
+#                 "suggestions": "Không thể đánh giá",
+#                 "knowledge": "Không có thông tin"
+#             }
+#     def clean_json_string(s: str) -> str:
+#         """Loại bỏ code block ```json ...``` và các ký tự escape thừa"""
+#         s = s.strip()
+#         # Xóa markdown code block
+#         s = re.sub(r"^```json\s*|\s*```$", "", s, flags=re.IGNORECASE)
+#         # Thay \n, \t, \\uxxxx… thành ký tự thực
+#         s = s.encode('utf-8').decode('unicode_escape')
+#         return s    
+
+#     def parse_ai_response(self, text: str) -> Dict[str, str]:
+#         """Tách 3 phần EVALUATION / SUGGESTIONS / KNOWLEDGE từ text AI trả về"""
+#         result = {"evaluation": "", "suggestions": "", "knowledge": ""}
+#         if not text:
+#             return result
+
+#         s = text.replace("\r", "").strip()
+
+#         # Regex nhận diện 3 phần
+#         eval_re = r"(?:^|\n)\s*EVALUATION\s*:\s*"
+#         sugg_re = r"(?:^|\n)\s*SUGGESTIONS\s*:\s*"
+#         know_re = r"(?:^|\n)\s*KNOWLEDGE\s*:\s*"
+
+#         m_eval = re.search(eval_re, s, flags=re.IGNORECASE)
+#         m_sugg = re.search(sugg_re, s, flags=re.IGNORECASE)
+#         m_know = re.search(know_re, s, flags=re.IGNORECASE)
+
+#         if not m_eval:
+#             return result
+
+#         eval_end = m_sugg.start() if m_sugg else (m_know.start() if m_know else len(s))
+#         sugg_end = m_know.start() if m_know else len(s)
+
+#         result["evaluation"] = s[m_eval.end():eval_end].strip() if m_eval else ""
+#         result["suggestions"] = s[m_sugg.end():sugg_end].strip() if m_sugg else ""
+#         result["knowledge"] = s[m_know.end():].strip() if m_know else ""
+
+#         return result
+
+class AIQuestionExcelChecker:
+    """AI Checker chuyên dụng cho ExcelCheckThread (batch request)."""
+
+    def __init__(self, project_id: str, creds, model_name: str = "gemini-2.5-pro"):
+        self.client = VertexClient(project_id, creds, model_name)
+
+  
+
+    def check_questions_batch(self, questions_data, prompt_text):
+        if not questions_data:
+            return []
+
+        total = len(questions_data)
+        chunk_size = 10 if total >= 20 else total if total < 10 else 10
+
+        all_results = []
+
+        # chia chunk
+        for idx, i in enumerate(range(0, total, chunk_size), start=1):
+            chunk = questions_data[i:i + chunk_size]
+
+            # SỬ DỤNG _build_batch_prompt để format nhất quán
+            final_prompt = self._build_batch_prompt(chunk, prompt_text)
+
+            try:
+                response = self.client.send_data_to_check(prompt=final_prompt, temperature=0.2)
+                parsed_list = self.parse_ai_response_batch(response, len(chunk))
+                all_results.extend(parsed_list)
+            except Exception as e:
+                # nếu lỗi, thêm placeholder rỗng để không làm lệch zip khi ghi
+                for _ in chunk:
+                    all_results.append({"evaluation": "", "suggestions": "", "knowledge": ""})
+                continue
+
+        # đảm bảo đúng độ dài
+        while len(all_results) < total:
+            all_results.append({"evaluation": "", "suggestions": "", "knowledge": ""})
+
+        return all_results[:total]
+
+    # ------------------------- GHÉP PROMPT -------------------------
+    def _build_batch_prompt(self, question_list: List[Dict], prompt_content: str) -> str:
+        """Tạo prompt chứa nhiều câu hỏi."""
+        sections = [prompt_content, "Dưới đây là danh sách các câu hỏi cần phân tích:\n"]
+
+        for idx, q in enumerate(question_list, start=1):
+            q_text = "\n".join(q.get("question_text", []))
+            materials = q.get("materials", "")
+            options = q.get("options", "")
+            extras = q.get("extras", [])
+
+            block = [f"--- CÂU HỎI {idx} ---", f"Đề bài: {q_text}"]
+            if materials:
+                block.append(f"Học liệu: {materials}")
+            if options:
+                block.append(f"Phương án: {options}")
+            if extras:
+                block.append("Thông tin khác:\n" + "\n".join(extras))
+            sections.append("\n".join(block))
+
+        sections.append(
+            "\nYêu cầu: Trả về kết quả cho từng câu hỏi, theo đúng mẫu sau (không markdown):\n"
+            "CÂU HỎI [số]:\n"
+            "EVALUATION: [một câu]\n"
+            "SUGGESTIONS:\n- dòng 1\n- dòng 2\n"
+            "KNOWLEDGE:\n[5-7 câu mỗi dòng một câu]\n\n"
+            "Lặp lại theo thứ tự từng câu."
+        )
+        return "\n\n".join(sections)
+
+    # ------------------------- PHÂN TÍCH KẾT QUẢ -------------------------
+
+
+    def parse_ai_response_batch(self, text: str, expected_count: int) -> List[Dict[str, str]]:
+        results = []
+        if not text:
+            return [{"evaluation": "", "suggestions": "", "knowledge": ""} for _ in range(expected_count)]
+
+        # chia an toàn theo khoá "CÂU HỎI" hoặc các delimiters --- 
+        blocks = re.split(r"\n---+\s*\n", text)
+        # lọc các block rỗng và giữ chỉ những block có "EVALUATION" hoặc "SUGGESTIONS"...
+        for blk in blocks:
+            blk = blk.strip()
+            if not blk:
+                continue
+            # nếu block chứa nhiều câu (AI may repeat full blocks), tách thêm theo "CÂU HỎI \d+"
+            sub = re.split(r"CÂU HỎI\s*\d+\s*[:\-]?", blk, flags=re.IGNORECASE)
+            for s in sub:
+                s = s.strip()
+                if not s:
+                    continue
+                results.append(self.parse_ai_response(s))
+                if len(results) >= expected_count:
+                    break
+            if len(results) >= expected_count:
+                break
+
+        # fill nếu thiếu
+        while len(results) < expected_count:
+            results.append({"evaluation": "", "suggestions": "", "knowledge": ""})
+
+        return results[:expected_count]
+
+    # ----- Sửa parse_ai_response để robust hơn (giữ nguyên logic nhưng an toàn) -----
+    def parse_ai_response(self, text: str) -> Dict[str, str]:
+        result = {"evaluation": "", "suggestions": "", "knowledge": ""}
+        if not text:
+            return result
+        s = text.replace("\r", "").strip()
+
+        # tìm các phần bằng regex (case-insensitive)
+        parts = re.split(r"(?:\n|^)\s*(EVALUATION\s*:|SUGGESTIONS\s*:|KNOWLEDGE\s*:)\s*", s, flags=re.IGNORECASE)
+        # parts sẽ có pattern: [maybe text before, header1, content1, header2, content2,...]
+        # dựng dict từ đó
+        cur_key = None
+        buf = {"evaluation": "", "suggestions": "", "knowledge": ""}
+        i = 0
+        while i < len(parts):
+            part = parts[i].strip()
+            if re.match(r"(?i)^EVALUATION\s*:$", part):
+                # next piece is content
+                if i + 1 < len(parts):
+                    buf["evaluation"] = parts[i+1].strip()
+                    i += 2
+                    continue
+            if re.match(r"(?i)^SUGGESTIONS\s*:$", part):
+                if i + 1 < len(parts):
+                    buf["suggestions"] = parts[i+1].strip()
+                    i += 2
+                    continue
+            if re.match(r"(?i)^KNOWLEDGE\s*:$", part):
+                if i + 1 < len(parts):
+                    buf["knowledge"] = parts[i+1].strip()
+                    i += 2
+                    continue
+            i += 1
+
+        # nếu parser không tìm được, fallback lấy toàn bộ text vào evaluation
+        if not buf["evaluation"] and not buf["suggestions"] and not buf["knowledge"]:
+            buf["evaluation"] = s
+
+        return buf
+
+   

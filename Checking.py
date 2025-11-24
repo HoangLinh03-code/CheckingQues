@@ -21,6 +21,7 @@ from api.callApi import get_credentials
 from process.CheckThread import CheckThread
 from dotenv import load_dotenv
 from pathlib import Path
+from process.ExcelCheckThread import ExcelCheckThread
 # ==================== LOAD ENV (chỉ khi chạy local) ====================
 try:
     # Nếu chạy local bằng Python thì mới cần load file .env
@@ -67,14 +68,20 @@ class MainWindow(QWidget):
         # Đổi radio_file thành radio_files
         self.radio_files = QRadioButton("Chọn 1 hoặc nhiều file DOCX") 
         self.radio_folder = QRadioButton("Chọn 1 folder chứa nhiều DOCX")
+        self.radio_excel_files = QRadioButton("Chọn 1 hoặc nhiều file Excel")
+        self.radio_excel_folder = QRadioButton("Chọn 1 folder chứa nhiều file Excel")
         self.radio_files.setChecked(True) # Mặc định
         
         # Cập nhật signal
         self.radio_files.toggled.connect(lambda: self.set_input_mode("files")) 
         self.radio_folder.toggled.connect(lambda: self.set_input_mode("folder"))
+        self.radio_files.toggled.connect(lambda: self.set_input_mode("excel_files")) 
+        self.radio_folder.toggled.connect(lambda: self.set_input_mode("excel_folder"))
         
         mode_layout.addWidget(self.radio_files) # Thêm radio_files
         mode_layout.addWidget(self.radio_folder)
+        mode_layout.addWidget(self.radio_excel_files)
+        mode_layout.addWidget(self.radio_excel_folder)
         mode_group.setLayout(mode_layout)
         
         # 2. Chọn input
@@ -256,46 +263,62 @@ class MainWindow(QWidget):
     
     # CẬP NHẬT: Phương thức set_input_mode
     def set_input_mode(self, mode):
+        """Cập nhật chế độ chọn input và thay đổi nút chọn file tương ứng"""
         self.input_mode = mode
-        if mode == "files": # Đổi 'file' thành 'files'
+
+        if mode == "files":
             self.btn_select_input.setText("Chọn File(s) DOCX")
-        else:
-            self.btn_select_input.setText("Chọn Folder")
-        self.input_label.setText("Chưa chọn")
-        self.input_paths = []
-    
+            self.input_label.setText("Chưa chọn file DOCX")
+        elif mode == "folder":
+            self.btn_select_input.setText("Chọn Folder chứa DOCX")
+            self.input_label.setText("Chưa chọn folder DOCX")
+        elif mode == "excel_files":
+            self.btn_select_input.setText("Chọn File(s) Excel")
+            self.input_label.setText("Chưa chọn file Excel")
+        elif mode == "excel_folder":
+            self.btn_select_input.setText("Chọn Folder chứa Excel")
+            self.input_label.setText("Chưa chọn folder Excel")
     # CẬP NHẬT: Phương thức select_input
     def select_input(self):
-        if self.input_mode == "files": # Đổi 'file' thành 'files'
-            # Sử dụng QFileDialog.getOpenFileNames (số nhiều)
-            file_paths, _ = QFileDialog.getOpenFileNames(
-                self, "Chọn một hoặc nhiều file DOCX", "", "Word Files (*.docx)"
-            )
-            
-            if file_paths: # file_paths là một list
-                self.input_paths = file_paths
-                
-                # Cập nhật label dựa trên số lượng file
-                if len(file_paths) == 1:
-                    self.input_label.setText(os.path.basename(file_paths[0]))
-                else:
-                    self.input_label.setText(f"Đã chọn {len(file_paths)} file")
-                    
-                self.log_text.append(f"✔️ Đã chọn {len(file_paths)} file(s)")
-        
-        else: # self.input_mode == "folder" (Giữ nguyên logic)
-            folder_path = QFileDialog.getExistingDirectory(
-                self, "Chọn folder chứa DOCX"
-            )
-            if folder_path:
-                docx_files = glob.glob(os.path.join(folder_path, "*.docx"))
-                if docx_files:
-                    self.input_paths = docx_files
-                    self.input_label.setText(f"{folder_path} ({len(docx_files)} files)")
-                    self.log_text.append(f"✔️ Đã chọn folder: {len(docx_files)} file DOCX")
-                else:
-                    QMessageBox.warning(self, "Cảnh báo", "Không tìm thấy file DOCX nào trong folder!")
-    
+        """Xử lý chọn file hoặc folder theo mode hiện tại"""
+        try:
+            if self.input_mode == "files":
+                files, _ = QFileDialog.getOpenFileNames(self, "Chọn file DOCX", "", "Word Documents (*.docx)")
+                if files:
+                    self.input_paths = files
+                    self.input_label.setText(f"Đã chọn {len(files)} file DOCX")
+
+            elif self.input_mode == "folder":
+                folder = QFileDialog.getExistingDirectory(self, "Chọn folder DOCX")
+                if folder:
+                    files = glob.glob(os.path.join(folder, "*.docx"))
+                    if not files:
+                        QMessageBox.warning(self, "Lỗi", "Folder không chứa file DOCX hợp lệ!")
+                        return
+                    self.input_paths = files
+                    self.input_label.setText(f"{folder} ({len(files)} file DOCX)")
+
+            elif self.input_mode == "excel_files":
+                files, _ = QFileDialog.getOpenFileNames(self, "Chọn file Excel", "", "Excel Files (*.xlsx)")
+                if files:
+                    self.input_paths = files
+                    self.input_label.setText(f"Đã chọn {len(files)} file Excel")
+
+            elif self.input_mode == "excel_folder":
+                folder = QFileDialog.getExistingDirectory(self, "Chọn folder Excel")
+                if folder:
+                    files = glob.glob(os.path.join(folder, "*.xlsx"))
+                    if not files:
+                        QMessageBox.warning(self, "Lỗi", "Folder không chứa file Excel hợp lệ!")
+                        return
+                    self.input_paths = files
+                    self.input_label.setText(f"{folder} ({len(files)} file Excel)")
+
+            else:
+                QMessageBox.warning(self, "Chưa chọn chế độ", "Hãy chọn chế độ input trước khi chọn file!")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Lỗi chọn file", str(e))
     def select_prompt(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Chọn file prompt", "", "Text Files (*.txt)"
@@ -328,35 +351,42 @@ class MainWindow(QWidget):
         if not self.prompt_path or not os.path.exists(self.prompt_path):
             QMessageBox.warning(self, "Lỗi", "Vui lòng chọn file prompt!")
             return
-        
+
+        # ✅ Chọn đúng thread class theo loại file
+        if self.radio_excel_files.isChecked() or self.radio_excel_folder.isChecked():
+            thread_cls = ExcelCheckThread
+        else:
+            thread_cls = CheckThread
+
+        # ✅ Tạo thread xử lý phù hợp
+        self.check_thread = thread_cls(
+            self.input_paths, self.prompt_path, self.project_id, self.creds
+        )
+
+        # Reset trạng thái giao diện
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self.log_text.clear()
         self.progress_bar.setValue(0)
-        
-        self.check_thread = CheckThread(
-            self.input_paths,
-            self.prompt_path,
-            self.project_id,
-            self.creds
-        )
-        
+
+        # ✅ Kết nối signal
         self.check_thread.progress.connect(self.update_log)
         self.check_thread.finished_signal.connect(self.on_finished)
         self.check_thread.error_signal.connect(self.on_error)
-        
+
+        # ✅ Bắt đầu chạy
         self.check_thread.start()
-    
+        
     def stop_check(self):
-        if self.check_thread and self.check_thread.isRunning():
-            reply = QMessageBox.question(
-                self, "Xác nhận",
-                "Bạn có chắc muốn dừng?",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply == QMessageBox.Yes:
-                self.check_thread.stop()
-                self.log_text.append("\n⏸️ Đang dừng...")
+            if self.check_thread and self.check_thread.isRunning():
+                reply = QMessageBox.question(
+                    self, "Xác nhận",
+                    "Bạn có chắc muốn dừng?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply == QMessageBox.Yes:
+                    self.check_thread.stop()
+                    self.log_text.append("\n⏸️ Đang dừng...")
     
     def update_log(self, message):
         self.log_text.append(message)
